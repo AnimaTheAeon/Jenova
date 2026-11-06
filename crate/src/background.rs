@@ -61,11 +61,20 @@ fn lock_held(name: &str) -> bool {
     }
 }
 
-/// Held by the window for its whole lifetime.
-pub fn hold_gui_lock() -> Option<File> {
+/// Held by the window for its whole lifetime. `wait` keeps trying for a
+/// while (used right after an update, while the old window closes).
+pub fn hold_gui_lock(wait: Duration) -> Option<File> {
     let file = open_lock(GUI_LOCK)?;
-    file.try_lock().ok()?;
-    Some(file)
+    let deadline = Instant::now() + wait;
+    loop {
+        if file.try_lock().is_ok() {
+            return Some(file);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }
 
 /// Whether a background watcher is running.

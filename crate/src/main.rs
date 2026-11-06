@@ -250,7 +250,13 @@ fn main() {
     }
 
     // Tell a background watcher this window is open, so it pauses.
-    let _gui_lock = background::hold_gui_lock();
+    // After an update, wait for the old window to finish closing first.
+    let after_update = std::env::args().any(|arg| arg == updater::AFTER_UPDATE_ARG);
+    let _gui_lock = background::hold_gui_lock(if after_update {
+        std::time::Duration::from_secs(15)
+    } else {
+        std::time::Duration::ZERO
+    });
 
     // Initialize the app.
     if let Err(e) = initialize_app() {
