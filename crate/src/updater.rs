@@ -153,7 +153,7 @@ pub fn install_in_background(
                     ctx.request_repaint();
                 }
                 std::thread::sleep(Duration::from_millis(800));
-                restart();
+                restart(ctx.as_ref());
             }
             Err(error) => {
                 warn!("Update failed: {}", error);
@@ -407,24 +407,110 @@ pub fn replace_exe(exe: &Path, new_bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// Delete the exe left over from the last update (call at startup).
+/// Argument passed to the new exe after an update.
+pub const AFTER_UPDATE_ARG: &str = "--after-update";
+
+/// Delete the exe left over from the last update (call at startup, off the
+/// UI thread). An old process that never exited is ended first; if the file
+/// still can't be deleted it's moved into %APPDATA%\\Jenova\\old and removed
+/// on a later launch.
 pub fn cleanup_old_exe() {
-    if let Ok(exe) = std::env::current_exe() {
-        let old = old_path(&exe);
-        if old.exists() {
-            // The old process may take a moment to exit.
-            for _ in 0..20 {
-                if std::fs::remove_file(&old).is_ok() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(250));
+    purge_old_versions_folder();
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let old = old_path(&exe);
+    if !old.exists() {
+        return;
+    }
+    let try_delete = |tries: u32| {
+        for _ in 0..tries {
+            if std::fs::remove_file(&old).is_ok() || !old.exists() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        false
+    };
+    // Give the previous version a moment to finish closing.
+    if try_delete(20) {
+        info!("Removed leftover {}", old.display());
+        return;
+    }
+    // Still locked: an old Jenova is still running from that file.
+    warn!("{} is still in use; ending the old process", old.display());
+    end_processes_running(&old);
+    if try_delete(20) {
+        info!("Removed leftover {}", old.display());
+        return;
+    }
+    // Last resort: get it out of the exe's folder.
+    if let Some(dir) = old_versions_dir() {
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let target = dir.join(format!("jenova-{stamp}.exe.old"));
+        match std::fs::rename(&old, &target) {
+            Ok(()) => {
+                info!("Moved leftover exe to {}", target.display());
+            }
+            Err(error) => {
+                warn!("Couldn't remove {}: {}", old.display(), error);
             }
         }
     }
 }
 
-/// Launch the new exe and exit this one.
-fn restart() -> ! {
+fn old_versions_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    let base = crate::helper_functions::Utils::app_data_dir().ok();
+    #[cfg(not(windows))]
+    let base = dirs::cache_dir().map(|d| d.join("jenova"));
+    let dir = base?.join("old");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// Delete parked old versions that are no longer in use.
+fn purge_old_versions_folder() {
+    let Some(dir) = old_versions_dir() else {
+        return;
+    };
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// End any process whose program file is `path`.
+fn end_processes_running(path: &Path) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let quoted = path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq '{quoted}' -and $_.ProcessId -ne {me} }} | \
+             ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}",
+            me = std::process::id()
+        );
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+    }
+}
+
+/// Launch the new exe, then close this window through the normal shutdown
+/// path (ending the process from a worker thread can hang it on Windows,
+/// keeping the old exe locked).
+fn restart(ctx: Option<&eframe::egui::Context>) {
     if let Ok(exe) = std::env::current_exe() {
         // current_exe may now point at the renamed ".old" file on some systems.
         let exe = {
@@ -434,9 +520,20 @@ fn restart() -> ! {
                 None => exe.clone(),
             }
         };
-        let _ = std::process::Command::new(exe).spawn();
+        let _ = std::process::Command::new(exe)
+            .arg(AFTER_UPDATE_ARG)
+            .spawn();
     }
-    std::process::exit(0);
+    match ctx {
+        Some(ctx) => {
+            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+            ctx.request_repaint();
+            // Safety net if the window doesn't close.
+            std::thread::sleep(Duration::from_secs(10));
+            std::process::exit(0);
+        }
+        None => std::process::exit(0),
+    }
 }
 
 #[cfg(test)]
