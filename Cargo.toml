@@ -1,0 +1,10 @@
+# Workspace root: only member is the app crate.
+# Run from repo root: cargo run, cargo build, etc.
+[workspace]
+members = ["crate"]
+resolver = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

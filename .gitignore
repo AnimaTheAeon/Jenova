@@ -1,0 +1,14 @@
+target/
+.installer/Output/
+rustitles_log.txt
+rustitles_settings.json
+System Volume Information
+*.code-workspace
+*.lock
+!Cargo.lock
+*.lockfile
+.agent-plans/
+*.md
+.config/
+.DS_Store
+publish/

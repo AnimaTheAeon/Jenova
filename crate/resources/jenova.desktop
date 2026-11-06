@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Jenova
+Comment=Watches media folders and downloads subtitles automatically
+Exec=jenova
+Icon=jenova
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Utility;
