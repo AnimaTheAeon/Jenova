@@ -294,7 +294,9 @@ fn register_app_id() {
             }
             let _ = key.set_value("IconBackgroundColor", &"FF12207A");
         }
-        Err(error) => warn!("Could not register notification app id: {error}"),
+        Err(error) => {
+            warn!("Could not register notification app id: {error}");
+        }
     }
 }
 
