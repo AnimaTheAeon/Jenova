@@ -35,14 +35,7 @@ impl ScanHistory {
     pub fn get_path() -> std::io::Result<PathBuf> {
         #[cfg(windows)]
         {
-            let exe_path = std::env::current_exe()?;
-            let exe_dir = exe_path.parent().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Failed to get executable directory",
-                )
-            })?;
-            Ok(exe_dir.join("jenova_scan_history.json"))
+            crate::helper_functions::Utils::shared_data_file("jenova_scan_history.json")
         }
 
         #[cfg(not(windows))]

@@ -125,6 +125,9 @@ impl SubtitleDownloader {
 
     /// Menu-style "Subtitles found" pop-ups in the top-right of the main window.
     pub fn render_in_app_toasts(&self, ctx: &egui::Context, anchor: egui::Pos2) {
+        if !self.notify_in_app {
+            return;
+        }
         let toasts = crate::notifications::in_app_toasts();
         if toasts.is_empty() {
             return;
@@ -446,7 +449,36 @@ impl SubtitleDownloader {
     }
 
     fn render_config_page(&mut self, ui: &mut egui::Ui) {
-        page_title(ui, "Config", "Dependencies, performance and watch timing");
+        ui.horizontal(|ui| {
+            ff::title(ui, "Config", 26.0, TEXT);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let applying = self.apply_in_progress.load(Ordering::SeqCst);
+                if ui
+                    .add_enabled(
+                        !applying && self.dependencies_ready(),
+                        egui::Button::new(RichText::new("Save & Apply").strong().size(16.0)),
+                    )
+                    .on_hover_text("Save all settings and restart the background watcher so every change takes effect now")
+                    .clicked()
+                {
+                    self.save_and_apply();
+                }
+                if applying {
+                    ui.label(RichText::new("Applying…").color(ff::WARN));
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
+                } else if let Some(at) = self.settings_applied_at {
+                    if at.elapsed().as_secs_f32() < 4.0 {
+                        ui.label(RichText::new("Saved and applied").color(ff::GOOD));
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+                    }
+                }
+            });
+        });
+        ui.label(
+            RichText::new("Dependencies, performance, background mode and notifications")
+                .color(TEXT_DIM),
+        );
+        ff::divider(ui);
         egui::ScrollArea::vertical().id_salt("config_scroll").show(ui, |ui| {
             ff::stat_label(ui, "DEPENDENCIES");
             self.render_python_status(ui);
