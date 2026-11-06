@@ -1,4 +1,4 @@
-//! Rustitles subtitle downloader.
+//! Jenova subtitle watcher.
 
 // Application modules
 mod app;

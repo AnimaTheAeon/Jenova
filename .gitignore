@@ -1,7 +1,8 @@
 target/
 .installer/Output/
-rustitles_log.txt
-rustitles_settings.json
+jenova_log.txt
+jenova_background_log.txt
+jenova_settings.json
 System Volume Information
 *.code-workspace
 *.lock

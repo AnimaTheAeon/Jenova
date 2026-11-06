@@ -540,10 +540,8 @@ impl SubtitleDownloader {
             self.render_updates_section(ui);
             ff::divider(ui);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Jenova v{} · based on", crate::config::APP_VERSION)).color(TEXT_DIM));
-                ui.hyperlink_to("fosterbarnes/rustitles", "https://github.com/fosterbarnes/rustitles");
-                ui.label(RichText::new("· support the original:").color(TEXT_DIM));
-                ui.hyperlink_to("coff.ee/fosterbarnes", "https://coff.ee/fosterbarnes");
+                ui.label(RichText::new(format!("Jenova v{} ·", crate::config::APP_VERSION)).color(TEXT_DIM));
+                ui.hyperlink_to("AnimaTheAeon/Jenova", "https://github.com/AnimaTheAeon/Jenova");
             });
         });
     }

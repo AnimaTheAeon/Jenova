@@ -554,7 +554,7 @@ mod tests {
     #[test]
     fn creates_numbered_backups_without_replacing_existing_backups() {
         let folder = std::env::temp_dir().join(format!(
-            "rustitles-backup-test-{}-{}",
+            "jenova-backup-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -580,7 +580,7 @@ mod tests {
     #[test]
     fn reports_missing_subtitle_backup_source() {
         let folder = std::env::temp_dir().join(format!(
-            "rustitles-missing-backup-test-{}-{}",
+            "jenova-missing-backup-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn missing_subtitle_uses_language_generic_and_sdh_rules() {
         let folder = std::env::temp_dir().join(format!(
-            "rustitles-missing-sub-test-{}-{}",
+            "jenova-missing-sub-test-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

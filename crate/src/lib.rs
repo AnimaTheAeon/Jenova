@@ -1,4 +1,4 @@
-//! Rustitles subtitle downloader library.
+//! Jenova subtitle watcher library.
 
 pub mod app;
 pub mod background;
