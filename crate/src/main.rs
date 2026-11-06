@@ -2,6 +2,7 @@
 
 // Application modules
 mod app;
+mod background;
 mod config;
 mod data_structures;
 mod ff_layout;
@@ -9,12 +10,12 @@ mod ff_theme;
 mod gui;
 mod helper_functions;
 mod logging;
+mod notifications;
 mod python_manager;
 mod scan_history;
 mod settings;
 mod subtitle_utils;
 mod watch;
-mod notifications;
 
 // Re-export shared items
 pub use config::*;
@@ -56,9 +57,7 @@ fn initialize_app() -> Result<(), Box<dyn std::error::Error>> {
 fn load_app_icon() -> Option<egui::IconData> {
     #[cfg(windows)]
     {
-        if let Ok(image) =
-            image::load_from_memory(include_bytes!("../resources/jenova_icon.ico"))
-        {
+        if let Ok(image) = image::load_from_memory(include_bytes!("../resources/jenova_icon.ico")) {
             let rgba = image.to_rgba8();
             let size = [rgba.width(), rgba.height()];
             Some(egui::IconData {
@@ -237,6 +236,17 @@ fn cleanup_on_exit() {
 }
 
 fn main() {
+    if std::env::args().any(|arg| arg == background::BACKGROUND_ARG) {
+        logging::BACKGROUND_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = initialize_app();
+        background::run();
+        cleanup_on_exit();
+        return;
+    }
+
+    // Tell a background watcher this window is open, so it pauses.
+    let _gui_lock = background::hold_gui_lock();
+
     // Initialize the app.
     if let Err(e) = initialize_app() {
         eprintln!("Failed to initialize application: {}", e);

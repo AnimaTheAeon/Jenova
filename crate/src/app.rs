@@ -288,7 +288,7 @@ fn session_config(content: &str) -> Result<String, String> {
     Ok(document.to_string())
 }
 
-fn probe_startup_dependencies() -> InitCheckResult {
+pub(crate) fn probe_startup_dependencies() -> InitCheckResult {
     let python_info = PythonManager::get_python_info();
     let (python_command, python_version) = python_info
         .map(|(command, version)| (Some(command), Some(version)))
@@ -589,6 +589,8 @@ impl Default for SubtitleDownloader {
             watch_options_open: settings.watch_options_open,
             notify_desktop: settings.notify_desktop,
             notify_in_app: settings.notify_in_app,
+            background_service: settings.background_service,
+            background_checked: false,
             menu_page: MenuPage::Watch,
             app_started: std::time::Instant::now(),
         }
@@ -622,12 +624,54 @@ impl SubtitleDownloader {
             watch_options_open: self.watch_options_open,
             notify_desktop: self.notify_desktop,
             notify_in_app: self.notify_in_app,
+            background_service: self.background_service,
         }
+    }
+
+    /// On launch: refresh the startup entry and make sure the background
+    /// watcher is running (it idles while this window is open).
+    pub fn ensure_background_service(&self) {
+        if !self.background_service {
+            return;
+        }
+        if let Err(error) = crate::background::startup::register() {
+            warn!("Could not refresh startup entry: {}", error);
+        }
+        if !crate::background::background_running() {
+            if let Err(error) = crate::background::spawn_background() {
+                warn!("Could not start background watcher: {}", error);
+            }
+        }
+    }
+
+    /// Switch background mode on or off. Off removes the startup entry and
+    /// stops the background process.
+    pub fn set_background_service(&mut self, enabled: bool) -> Result<(), String> {
+        if enabled {
+            crate::background::startup::register()?;
+            self.background_service = true;
+            self.save_current_settings();
+            crate::background::spawn_background()?;
+            info!("Background mode enabled");
+        } else {
+            self.background_service = false;
+            // The background copy sees this in the settings file and exits.
+            self.save_current_settings();
+            let result = crate::background::startup::unregister();
+            crate::background::cleanup_after_stop();
+            info!("Background mode disabled and startup entry removed");
+            result?;
+        }
+        Ok(())
     }
 
     /// Keep the folder watcher in sync with the current settings.
     pub fn sync_watch_service(&mut self, ctx: &eframe::egui::Context) {
         self.watch.set_repaint_context(ctx);
+        if !self.background_checked {
+            self.background_checked = true;
+            self.ensure_background_service();
+        }
         crate::notifications::set_context(ctx);
         crate::notifications::DESKTOP_ENABLED
             .store(self.notify_desktop, std::sync::atomic::Ordering::Relaxed);

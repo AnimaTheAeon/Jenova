@@ -146,6 +146,8 @@ pub struct SubtitleDownloader {
     pub watch_options_open: bool,
     pub notify_desktop: bool,
     pub notify_in_app: bool,
+    pub background_service: bool,
+    pub background_checked: bool,
     pub menu_page: MenuPage,
     pub app_started: std::time::Instant,
 }

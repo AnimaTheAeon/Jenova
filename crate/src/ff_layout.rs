@@ -487,11 +487,13 @@ impl SubtitleDownloader {
                 }
             });
             ff::divider(ui);
+            self.render_background_section(ui);
+            ff::divider(ui);
             ff::stat_label(ui, "NOTIFICATIONS");
             changed |= ui
                 .checkbox(
                     &mut self.notify_desktop,
-                    "Desktop notification when subtitles are found",
+                    "Windows notifications (toasts) when subtitles are found",
                 )
                 .changed();
             changed |= ui
@@ -508,6 +510,50 @@ impl SubtitleDownloader {
                 ui.hyperlink_to("coff.ee/fosterbarnes", "https://coff.ee/fosterbarnes");
             });
         });
+    }
+
+    fn render_background_section(&mut self, ui: &mut egui::Ui) {
+        ff::stat_label(ui, "BACKGROUND");
+        if !crate::background::startup::supported() {
+            ui.label(
+                RichText::new("Running in the background isn't available on this system yet.")
+                    .color(TEXT_DIM),
+            );
+            return;
+        }
+        let label = if cfg!(windows) {
+            "Run in the background when Windows starts"
+        } else {
+            "Run in the background when you log in"
+        };
+        let mut enabled = self.background_service;
+        if ui
+            .checkbox(&mut enabled, label)
+            .on_hover_text("Keeps watching your folders even when this window is closed. Turning it off removes the startup entry and stops the background process.")
+            .changed()
+        {
+            if let Err(error) = self.set_background_service(enabled) {
+                self.status = format!("Background mode: {error}");
+                crate::warn!("Background mode change failed: {}", error);
+            }
+        }
+        let running = crate::background::background_running();
+        let registered = crate::background::startup::is_registered();
+        let (text, color) = match (self.background_service, running, registered) {
+            (true, true, true) => (
+                "Background watcher is running. It pauses while this window is open and takes over when you close it.",
+                ff::GOOD,
+            ),
+            (true, false, _) => ("Background watcher is starting…", ff::WARN),
+            (true, true, false) => ("Running, but the startup entry is missing. Toggle off and on to fix.", ff::WARN),
+            (false, true, _) => ("Stopping background watcher…", ff::WARN),
+            (false, false, _) => ("Off. Folders are only watched while this window is open.", TEXT_DIM),
+        };
+        ui.label(RichText::new(text).color(color).size(13.0));
+        if self.background_service {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs(1));
+        }
     }
 
     fn render_log_page(&mut self, ui: &mut egui::Ui) {
