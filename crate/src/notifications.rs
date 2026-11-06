@@ -95,6 +95,10 @@ pub fn in_app_toasts() -> Vec<InAppToast> {
     list.iter().cloned().collect()
 }
 
+pub fn clear_in_app() {
+    IN_APP.lock().unwrap_or_else(|e| e.into_inner()).clear();
+}
+
 pub fn dismiss_in_app(index: usize) {
     let mut list = IN_APP.lock().unwrap_or_else(|e| e.into_inner());
     if index < list.len() {

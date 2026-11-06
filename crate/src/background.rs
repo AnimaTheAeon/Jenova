@@ -96,6 +96,66 @@ pub fn spawn_background() -> Result<(), String> {
     command.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Stop every background Jenova process, whichever folder it runs from.
+/// Blocks until they're gone (or a few seconds pass).
+pub fn stop_all_background() {
+    let me = std::process::id();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let script = format!(
+            "Get-CimInstance Win32_Process -Filter \"Name LIKE 'jenova%.exe'\" | \
+             Where-Object {{ $_.CommandLine -like '*{BACKGROUND_ARG}*' -and $_.ProcessId -ne {me} }} | \
+             ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+        );
+        let result = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if let Err(error) = result {
+            warn!("Could not stop background watchers: {error}");
+        }
+    }
+    #[cfg(unix)]
+    {
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                    continue;
+                };
+                if pid == me {
+                    continue;
+                }
+                let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+                    continue;
+                };
+                let args: Vec<String> = cmdline
+                    .split(|b| *b == 0)
+                    .map(|a| String::from_utf8_lossy(a).into_owned())
+                    .collect();
+                let is_jenova = args.first().is_some_and(|exe| {
+                    Path::new(exe)
+                        .file_name()
+                        .is_some_and(|n| n.to_string_lossy().starts_with("jenova"))
+                });
+                if is_jenova && args.iter().any(|a| a == BACKGROUND_ARG) {
+                    let _ = std::process::Command::new("kill")
+                        .arg(pid.to_string())
+                        .status();
+                }
+            }
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while background_running() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 /// After switching off: wait for the background copy to exit, then delete
 /// its lock file so nothing is left behind.
 pub fn cleanup_after_stop() {

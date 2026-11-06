@@ -176,7 +176,7 @@ impl Settings {
     pub fn credentials_storage_blurb() -> &'static str {
         #[cfg(windows)]
         {
-            "Stored locally in jenova_settings.json (next to the app) and synced to subliminal.toml for Subliminal. No key is baked into the app."
+            "Stored locally in %APPDATA%\\Jenova\\jenova_settings.json and synced to subliminal.toml for Subliminal. No key is baked into the app."
         }
         #[cfg(not(windows))]
         {
@@ -188,14 +188,7 @@ impl Settings {
     pub fn get_path() -> std::io::Result<PathBuf> {
         #[cfg(windows)]
         {
-            let exe_path = std::env::current_exe()?;
-            let exe_dir = exe_path.parent().ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Failed to get executable directory",
-                )
-            })?;
-            Ok(exe_dir.join("jenova_settings.json"))
+            crate::helper_functions::Utils::shared_data_file("jenova_settings.json")
         }
 
         #[cfg(not(windows))]

@@ -67,6 +67,30 @@ impl Utils {
         }
     }
 
+    /// Per-user data folder shared by every copy of the exe (Windows:
+    /// %APPDATA%\Jenova). Files that used to live next to the exe are
+    /// copied over the first time.
+    #[cfg(windows)]
+    pub fn shared_data_file(name: &str) -> std::io::Result<std::path::PathBuf> {
+        let base = dirs::config_dir().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "No AppData folder")
+        })?;
+        let dir = base.join("Jenova");
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(name);
+        if !path.exists() {
+            if let Some(legacy) = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|d| d.join(name)))
+            {
+                if legacy.exists() {
+                    let _ = std::fs::copy(&legacy, &path);
+                }
+            }
+        }
+        Ok(path)
+    }
+
     /// Get the log file path.
     pub fn get_log_path() -> Result<std::path::PathBuf, String> {
         #[cfg(windows)]

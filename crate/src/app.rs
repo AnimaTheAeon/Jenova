@@ -591,6 +591,8 @@ impl Default for SubtitleDownloader {
             notify_in_app: settings.notify_in_app,
             background_service: settings.background_service,
             background_checked: false,
+            apply_in_progress: Arc::new(AtomicBool::new(false)),
+            settings_applied_at: None,
             menu_page: MenuPage::Watch,
             app_started: std::time::Instant::now(),
         }
@@ -637,11 +639,50 @@ impl SubtitleDownloader {
         if let Err(error) = crate::background::startup::register() {
             warn!("Could not refresh startup entry: {}", error);
         }
-        if !crate::background::background_running() {
+        // Replace any running copy (possibly from another folder or an
+        // older build) with one from this exe.
+        std::thread::spawn(|| {
+            crate::background::stop_all_background();
             if let Err(error) = crate::background::spawn_background() {
                 warn!("Could not start background watcher: {}", error);
             }
+        });
+    }
+
+    /// Save every setting and make it take effect everywhere now: restart
+    /// the background watcher (or make sure none is left running) and
+    /// refresh the startup entry.
+    pub fn save_and_apply(&mut self) {
+        self.save_current_settings();
+        crate::notifications::DESKTOP_ENABLED
+            .store(self.notify_desktop, std::sync::atomic::Ordering::Relaxed);
+        crate::notifications::IN_APP_ENABLED
+            .store(self.notify_in_app, std::sync::atomic::Ordering::Relaxed);
+        if !self.notify_in_app {
+            crate::notifications::clear_in_app();
         }
+        let background = self.background_service;
+        let startup = if background {
+            crate::background::startup::register()
+        } else {
+            crate::background::startup::unregister()
+        };
+        if let Err(error) = startup {
+            warn!("Startup entry update failed: {}", error);
+        }
+        let flag = std::sync::Arc::clone(&self.apply_in_progress);
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        std::thread::spawn(move || {
+            crate::background::stop_all_background();
+            if background {
+                if let Err(error) = crate::background::spawn_background() {
+                    warn!("Could not start background watcher: {}", error);
+                }
+            }
+            flag.store(false, std::sync::atomic::Ordering::SeqCst);
+        });
+        self.settings_applied_at = Some(std::time::Instant::now());
+        info!("Settings saved and applied");
     }
 
     /// Switch background mode on or off. Off removes the startup entry and
@@ -658,6 +699,7 @@ impl SubtitleDownloader {
             // The background copy sees this in the settings file and exits.
             self.save_current_settings();
             let result = crate::background::startup::unregister();
+            std::thread::spawn(crate::background::stop_all_background);
             crate::background::cleanup_after_stop();
             info!("Background mode disabled and startup entry removed");
             result?;
