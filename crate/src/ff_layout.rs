@@ -91,6 +91,8 @@ impl SubtitleDownloader {
             pos2(main.right() - 14.0, main.top() + 14.0),
         );
 
+        self.render_update_prompt(ui.ctx());
+
         ff::window_at(ui, main, "ff_main", |ui| {
             if !deps_ready {
                 self.render_config_page(ui);
@@ -535,6 +537,8 @@ impl SubtitleDownloader {
                 self.save_current_settings();
             }
             ff::divider(ui);
+            self.render_updates_section(ui);
+            ff::divider(ui);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("Jenova v{} · based on", crate::config::APP_VERSION)).color(TEXT_DIM));
                 ui.hyperlink_to("fosterbarnes/rustitles", "https://github.com/fosterbarnes/rustitles");
@@ -542,6 +546,208 @@ impl SubtitleDownloader {
                 ui.hyperlink_to("coff.ee/fosterbarnes", "https://coff.ee/fosterbarnes");
             });
         });
+    }
+
+    fn render_updates_section(&mut self, ui: &mut egui::Ui) {
+        use crate::updater::UpdateState;
+        ff::stat_label(ui, "UPDATES");
+        if ui
+            .checkbox(
+                &mut self.check_updates,
+                "Check for updates when Jenova starts",
+            )
+            .changed()
+        {
+            self.save_current_settings();
+        }
+        ui.horizontal(|ui| {
+            let state = self.updater.state();
+            let busy = matches!(
+                state,
+                UpdateState::Checking | UpdateState::Downloading { .. } | UpdateState::Installed
+            );
+            if ui
+                .add_enabled(!busy, egui::Button::new("Check now"))
+                .clicked()
+            {
+                crate::updater::check_in_background(
+                    std::sync::Arc::clone(&self.updater),
+                    true,
+                    Some(ui.ctx().clone()),
+                );
+            }
+            let (text, color) = match &state {
+                UpdateState::Idle => (
+                    format!("You have v{}", crate::config::APP_VERSION),
+                    TEXT_DIM,
+                ),
+                UpdateState::Checking => ("Checking GitHub…".to_string(), ff::WARN),
+                UpdateState::UpToDate => (
+                    format!("You're up to date (v{})", crate::config::APP_VERSION),
+                    ff::GOOD,
+                ),
+                UpdateState::Available(release) => {
+                    (format!("v{} is available", release.version), ff::WARN)
+                }
+                UpdateState::Downloading { .. } => ("Downloading update…".to_string(), ff::WARN),
+                UpdateState::Installed => ("Restarting…".to_string(), ff::GOOD),
+                UpdateState::Failed(error) => (error.clone(), ff::BAD),
+            };
+            ui.label(RichText::new(text).color(color));
+            if let UpdateState::Available(_) = state {
+                if ui.button("Update…").clicked() {
+                    self.updater
+                        .dismissed
+                        .store(false, std::sync::atomic::Ordering::SeqCst);
+                }
+            }
+            if busy {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(250));
+            }
+        });
+    }
+
+    /// "Update available" Yes/No prompt and download progress.
+    fn render_update_prompt(&mut self, ctx: &egui::Context) {
+        use crate::updater::UpdateState;
+        use std::sync::atomic::Ordering::SeqCst;
+        let state = self.updater.state();
+        let show = match &state {
+            UpdateState::Available(_) => !self.updater.dismissed.load(SeqCst),
+            UpdateState::Downloading { .. } | UpdateState::Installed => true,
+            UpdateState::Failed(_) => self.updater.manual.load(SeqCst),
+            _ => false,
+        };
+        if !show {
+            return;
+        }
+        let mut close = false;
+        egui::Modal::new(egui::Id::new("ff_update_prompt"))
+            .frame(egui::Frame::NONE)
+            .backdrop_color(egui::Color32::from_black_alpha(150))
+            .show(ctx, |ui| {
+                ff::window(ui, |ui| {
+                    ui.set_width(440.0);
+                    match &state {
+                        UpdateState::Available(release) => {
+                            ff::title(ui, "Update available", 24.0, TEXT);
+                            ff::divider(ui);
+                            ui.horizontal(|ui| {
+                                ff::stat_label(ui, "CURRENT");
+                                ui.label(
+                                    RichText::new(format!("v{}", crate::config::APP_VERSION))
+                                        .strong(),
+                                );
+                                ui.add_space(16.0);
+                                ff::stat_label(ui, "NEW");
+                                ui.label(
+                                    RichText::new(format!("v{}", release.version))
+                                        .strong()
+                                        .color(ff::GOOD),
+                                );
+                            });
+                            if !release.notes.trim().is_empty() {
+                                ui.add_space(4.0);
+                                egui::ScrollArea::vertical()
+                                    .id_salt("update_notes")
+                                    .max_height(140.0)
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            RichText::new(release.notes.trim())
+                                                .color(TEXT_DIM)
+                                                .size(13.0),
+                                        );
+                                    });
+                            }
+                            ui.add_space(6.0);
+                            if release.asset.is_none() {
+                                ui.label(
+                                    RichText::new("This release has no Windows download attached.")
+                                        .color(ff::WARN),
+                                );
+                            }
+                            ui.label("Update now? Jenova will restart.");
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                let can_install = release.asset.is_some();
+                                if ui
+                                    .add_enabled(
+                                        can_install,
+                                        egui::Button::new(RichText::new("Yes").strong().size(17.0))
+                                            .min_size(egui::vec2(90.0, 30.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    self.updater.manual.store(true, SeqCst);
+                                    crate::updater::install_in_background(
+                                        std::sync::Arc::clone(&self.updater),
+                                        release.clone(),
+                                        Some(ctx.clone()),
+                                    );
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(RichText::new("No").strong().size(17.0))
+                                            .min_size(egui::vec2(90.0, 30.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    self.updater.dismissed.store(true, SeqCst);
+                                }
+                                if !release.page_url.is_empty() {
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.hyperlink_to("Release page", &release.page_url);
+                                    });
+                                }
+                            });
+                        }
+                        UpdateState::Downloading { release } => {
+                            ff::title(ui, &format!("Updating to v{}", release.version), 22.0, TEXT);
+                            ff::divider(ui);
+                            let done = self.updater.downloaded.load(SeqCst) as f32;
+                            let total = self.updater.total.load(SeqCst).max(1) as f32;
+                            ui.horizontal(|ui| {
+                                ff::stat_label(ui, "DOWNLOAD");
+                                ff::stat_bar(
+                                    ui,
+                                    done / total,
+                                    260.0,
+                                    egui::Color32::from_rgb(200, 150, 20),
+                                    egui::Color32::from_rgb(255, 236, 140),
+                                );
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{:.1} / {:.1} MB",
+                                        done / 1_048_576.0,
+                                        total / 1_048_576.0
+                                    ))
+                                    .strong(),
+                                );
+                            });
+                            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                        }
+                        UpdateState::Installed => {
+                            ff::title(ui, "Update installed", 22.0, TEXT);
+                            ui.label("Restarting Jenova…");
+                        }
+                        UpdateState::Failed(error) => {
+                            ff::title(ui, "Update failed", 22.0, ff::BAD);
+                            ff::divider(ui);
+                            ui.label(RichText::new(error).color(TEXT));
+                            ui.add_space(6.0);
+                            if ui.button("Close").clicked() {
+                                close = true;
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            });
+        if close {
+            self.updater.manual.store(false, SeqCst);
+            self.updater.reset();
+        }
     }
 
     fn render_background_section(&mut self, ui: &mut egui::Ui) {

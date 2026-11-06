@@ -148,6 +148,8 @@ pub struct SubtitleDownloader {
     pub notify_in_app: bool,
     pub background_service: bool,
     pub background_checked: bool,
+    pub updater: Arc<crate::updater::Updater>,
+    pub check_updates: bool,
     pub apply_in_progress: Arc<std::sync::atomic::AtomicBool>,
     pub settings_applied_at: Option<std::time::Instant>,
     pub menu_page: MenuPage,

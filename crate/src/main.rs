@@ -16,6 +16,7 @@ mod scan_history;
 mod settings;
 mod subtitle_utils;
 mod watch;
+mod updater;
 
 // Re-export shared items
 pub use config::*;
