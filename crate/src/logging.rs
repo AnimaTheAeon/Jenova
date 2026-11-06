@@ -86,7 +86,7 @@ impl AsyncLogger {
                 let exe_dir = exe_path
                     .parent()
                     .ok_or("Failed to get executable directory")?;
-                exe_dir.join("jenova_log.txt")
+                exe_dir.join(log_file_name("jenova_log.txt", "jenova_background_log.txt"))
             }
 
             #[cfg(not(windows))]
@@ -96,12 +96,12 @@ impl AsyncLogger {
                 if let Some(cache_dir) = xdg_dirs.get_cache_home() {
                     let app_dir = cache_dir.join("jenova");
                     std::fs::create_dir_all(&app_dir)?;
-                    app_dir.join("jenova.log")
+                    app_dir.join(log_file_name("jenova.log", "jenova_background.log"))
                 } else {
                     let home_dir = dirs::home_dir().ok_or("Failed to get home directory")?;
                     let app_dir = home_dir.join(".jenova");
                     std::fs::create_dir_all(&app_dir)?;
-                    app_dir.join("jenova.log")
+                    app_dir.join(log_file_name("jenova.log", "jenova_background.log"))
                 }
             }
         };
@@ -197,6 +197,17 @@ impl AsyncLogger {
         if let Some(handle) = self.handle {
             let _ = handle.join();
         }
+    }
+}
+
+/// Set before logging starts when running as the background watcher.
+pub static BACKGROUND_MODE: AtomicBool = AtomicBool::new(false);
+
+fn log_file_name(normal: &'static str, background: &'static str) -> &'static str {
+    if BACKGROUND_MODE.load(Ordering::Relaxed) {
+        background
+    } else {
+        normal
     }
 }
 

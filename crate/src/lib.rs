@@ -1,6 +1,7 @@
 //! Rustitles subtitle downloader library.
 
 pub mod app;
+pub mod background;
 pub mod config;
 pub mod data_structures;
 pub mod gui;
