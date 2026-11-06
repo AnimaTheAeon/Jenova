@@ -14,8 +14,8 @@ pub mod python_manager;
 pub mod scan_history;
 pub mod settings;
 pub mod subtitle_utils;
-pub mod watch;
 pub mod updater;
+pub mod watch;
 
 // Re-export shared items
 pub use config::*;

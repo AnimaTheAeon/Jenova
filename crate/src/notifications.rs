@@ -282,7 +282,9 @@ fn register_app_id() {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
-    let icon_path = dirs::data_local_dir().map(|dir| dir.join("Jenova").join("jenova.png"));
+    let icon_path = crate::helper_functions::Utils::app_data_dir()
+        .ok()
+        .map(|dir| dir.join("jenova.png"));
     if let Some(path) = icon_path.as_ref() {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);

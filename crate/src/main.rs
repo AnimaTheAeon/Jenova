@@ -15,8 +15,8 @@ mod python_manager;
 mod scan_history;
 mod settings;
 mod subtitle_utils;
-mod watch;
 mod updater;
+mod watch;
 
 // Re-export shared items
 pub use config::*;
@@ -237,6 +237,10 @@ fn cleanup_on_exit() {
 }
 
 fn main() {
+    // Keep every file Jenova writes in %APPDATA%\\Jenova.
+    #[cfg(windows)]
+    helper_functions::Utils::migrate_legacy_files();
+
     if std::env::args().any(|arg| arg == background::BACKGROUND_ARG) {
         logging::BACKGROUND_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = initialize_app();
