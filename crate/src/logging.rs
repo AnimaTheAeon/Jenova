@@ -82,11 +82,8 @@ impl AsyncLogger {
         let log_path = {
             #[cfg(windows)]
             {
-                let exe_path = std::env::current_exe()?;
-                let exe_dir = exe_path
-                    .parent()
-                    .ok_or("Failed to get executable directory")?;
-                exe_dir.join(log_file_name("jenova_log.txt", "jenova_background_log.txt"))
+                crate::helper_functions::Utils::app_data_dir()?
+                    .join(log_file_name("jenova_log.txt", "jenova_background_log.txt"))
             }
 
             #[cfg(not(windows))]

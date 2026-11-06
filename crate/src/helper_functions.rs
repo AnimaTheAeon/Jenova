@@ -67,39 +67,79 @@ impl Utils {
         }
     }
 
-    /// Per-user data folder shared by every copy of the exe (Windows:
-    /// %APPDATA%\Jenova). Files that used to live next to the exe are
-    /// copied over the first time.
+    /// %APPDATA%\\Jenova: every file Jenova writes lives here, whichever
+    /// folder the exe runs from. Created if missing.
     #[cfg(windows)]
-    pub fn shared_data_file(name: &str) -> std::io::Result<std::path::PathBuf> {
+    pub fn app_data_dir() -> std::io::Result<std::path::PathBuf> {
         let base = dirs::config_dir().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::NotFound, "No AppData folder")
         })?;
         let dir = base.join("Jenova");
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join(name);
-        if !path.exists() {
-            if let Some(legacy) = std::env::current_exe()
+        Ok(dir)
+    }
+
+    #[cfg(windows)]
+    pub fn shared_data_file(name: &str) -> std::io::Result<std::path::PathBuf> {
+        Ok(Self::app_data_dir()?.join(name))
+    }
+
+    /// Move files older versions left next to the exe into %APPDATA%\\Jenova.
+    #[cfg(windows)]
+    pub fn migrate_legacy_files() {
+        if let (Ok(data_dir), Some(exe_dir)) = (
+            Self::app_data_dir(),
+            std::env::current_exe()
                 .ok()
-                .and_then(|exe| exe.parent().map(|d| d.join(name)))
+                .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf)),
+        ) {
+            Self::move_legacy_files(&exe_dir, &data_dir);
+        }
+    }
+
+    /// Move Jenova's data files from `from` into `to`. If `to` already has a
+    /// file, it wins and the leftover in `from` is deleted.
+    pub fn move_legacy_files(from: &std::path::Path, to: &std::path::Path) {
+        const FILES: &[&str] = &[
+            "jenova_settings.json",
+            "jenova_settings.json.bak",
+            "jenova_scan_history.json",
+            "jenova_log.txt",
+            "jenova_background_log.txt",
+            "jenova_gui.lock",
+            "jenova_watcher.lock",
+        ];
+        let same = from
+            .canonicalize()
+            .ok()
+            .zip(to.canonicalize().ok())
+            .is_some_and(|(a, b)| a == b);
+        if same {
+            return;
+        }
+        for name in FILES {
+            let legacy = from.join(name);
+            if !legacy.is_file() {
+                continue;
+            }
+            let target = to.join(name);
+            if target.exists() {
+                let _ = std::fs::remove_file(&legacy);
+            } else if std::fs::rename(&legacy, &target).is_err()
+                && std::fs::copy(&legacy, &target).is_ok()
             {
-                if legacy.exists() {
-                    let _ = std::fs::copy(&legacy, &path);
-                }
+                let _ = std::fs::remove_file(&legacy);
             }
         }
-        Ok(path)
     }
 
     /// Get the log file path.
     pub fn get_log_path() -> Result<std::path::PathBuf, String> {
         #[cfg(windows)]
         {
-            let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
-            let exe_dir = exe_path
-                .parent()
-                .ok_or("Failed to get executable directory")?;
-            Ok(exe_dir.join("jenova_log.txt"))
+            Ok(Self::app_data_dir()
+                .map_err(|e| e.to_string())?
+                .join("jenova_log.txt"))
         }
         #[cfg(not(windows))]
         {
@@ -249,5 +289,35 @@ mod tests {
         assert!(Utils::is_plex_extras_folder("behind the scenes"));
         assert!(Utils::is_plex_extras_folder("FEATURETTES"));
         assert!(!Utils::is_plex_extras_folder("Season 01"));
+    }
+}
+
+#[cfg(test)]
+mod legacy_file_tests {
+    use super::Utils;
+
+    #[test]
+    fn leftovers_move_into_data_folder_and_existing_data_wins() {
+        let exe_dir = tempfile::tempdir().unwrap();
+        let data_dir = tempfile::tempdir().unwrap();
+        std::fs::write(exe_dir.path().join("jenova_log.txt"), "old log").unwrap();
+        std::fs::write(exe_dir.path().join("jenova_settings.json"), "stale").unwrap();
+        std::fs::write(data_dir.path().join("jenova_settings.json"), "current").unwrap();
+        std::fs::write(exe_dir.path().join("jenova.exe"), "program").unwrap();
+
+        Utils::move_legacy_files(exe_dir.path(), data_dir.path());
+
+        assert_eq!(
+            std::fs::read_to_string(data_dir.path().join("jenova_log.txt")).unwrap(),
+            "old log"
+        );
+        assert_eq!(
+            std::fs::read_to_string(data_dir.path().join("jenova_settings.json")).unwrap(),
+            "current"
+        );
+        assert!(!exe_dir.path().join("jenova_log.txt").exists());
+        assert!(!exe_dir.path().join("jenova_settings.json").exists());
+        // Only Jenova's data files are touched.
+        assert!(exe_dir.path().join("jenova.exe").exists());
     }
 }

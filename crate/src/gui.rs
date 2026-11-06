@@ -102,7 +102,260 @@ impl SubtitleDownloader {
             if main_response.hovered() || sub_response.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
+        });
+        ui.add_space(5.0);
+    }
 
+    /// Render the startup / installation title screen.
+    pub fn render_installation_wait(&self, ui: &mut egui::Ui, fade_out: bool) {
+        use crate::ff_theme as ff;
+        let time = self.splash_started.elapsed().as_secs_f32();
+        let fade_in = (time / 0.9).clamp(0.0, 1.0);
+        let sub_in = ((time - 0.7) / 0.8).clamp(0.0, 1.0);
+        let out_alpha = if fade_out {
+            self.splash_out_alpha()
+        } else {
+            1.0
+        };
+        if fade_in < 1.0 || sub_in < 1.0 || (fade_out && out_alpha > 0.001) || !fade_out {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(16));
+        }
+
+        let center = ui.max_rect().center();
+        let alpha = |a: f32| (a * out_alpha * 255.0) as u8;
+        let with_alpha = |c: egui::Color32, a: f32| {
+            egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha(a))
+        };
+        let painter = ui.painter();
+
+        // Title, letter-spaced, sliding up as it fades in.
+        let title = "J E N O V A";
+        let rise = (1.0 - fade_in) * 18.0;
+        let title_pos = egui::pos2(center.x, center.y - 30.0 + rise);
+        let font = egui::FontId::proportional(72.0);
+        painter.text(
+            title_pos + egui::vec2(3.0, 4.0),
+            egui::Align2::CENTER_CENTER,
+            title,
+            font.clone(),
+            with_alpha(egui::Color32::BLACK, fade_in * 0.8),
+        );
+        painter.text(
+            title_pos,
+            egui::Align2::CENTER_CENTER,
+            title,
+            font,
+            with_alpha(ff::TEXT, fade_in),
+        );
+
+        // Underline bar.
+        let bar_w = 360.0 * fade_in;
+        let bar = egui::Rect::from_center_size(
+            egui::pos2(center.x, center.y + 22.0),
+            egui::vec2(bar_w, 3.0),
+        );
+        painter.rect_filled(
+            bar,
+            egui::CornerRadius::same(1),
+            with_alpha(ff::LABEL, fade_in),
+        );
+
+        let status = if self.installing_python {
+            "Installing Python…"
+        } else if self.installing_subliminal {
+            "Installing Subliminal…"
+        } else {
+            "Subtitle watcher"
+        };
+        painter.text(
+            egui::pos2(center.x, center.y + 50.0),
+            egui::Align2::CENTER_CENTER,
+            status,
+            egui::FontId::proportional(20.0),
+            with_alpha(ff::TEXT_DIM, sub_in),
+        );
+    }
+
+    /// Render Python installation status.
+    pub fn render_python_status(&mut self, ui: &mut egui::Ui) {
+        if self.is_python_installed() {
+            let raw = self.get_python_version().cloned().unwrap_or_default();
+            let ver = raw.strip_prefix("Python ").unwrap_or(&raw);
+            ui.label(
+                egui::RichText::new(format!("Python v{}", ver))
+                    .color(DEPS_YELLOW)
+                    .size(12.0)
+                    .monospace(),
+            );
+        } else {
+            ui.label(
+                egui::RichText::new("Python not found")
+                    .color(DEPS_YELLOW)
+                    .size(12.0)
+                    .monospace(),
+            );
+            #[cfg(windows)]
+            if ui.button("Install Python").clicked() {
+                info!("User initiated Python installation");
+                self.start_python_install();
+            }
+            #[cfg(target_os = "linux")]
+            {
+                let command = linux_install_command(
+                    "sudo apt install python3 python3-pip",
+                    "sudo dnf install python3 python3-pip",
+                    "sudo pacman -S python python-pip",
+                );
+                render_dependency_command(ui, "Install Python 3:", &command);
+            }
+            #[cfg(target_os = "macos")]
+            {
+                let command = macos_install_command("python", self.homebrew_installed);
+                let label = if self.homebrew_installed {
+                    "Install Python 3:"
+                } else {
+                    "Install Homebrew and Python 3:"
+                };
+                render_dependency_command(ui, label, &command);
+            }
+        }
+    }
+
+    /// Render pipx installation status.
+    pub fn render_pipx_status(&mut self, _ui: &mut egui::Ui) {
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            if self.is_python_installed() {
+                if self.is_pipx_installed() {
+                    let text = self
+                        .get_pipx_version()
+                        .map(|v| format!("pipx v{}", v))
+                        .unwrap_or_else(|| "pipx is installed".to_string());
+                    _ui.label(
+                        egui::RichText::new(text)
+                            .color(DEPS_YELLOW)
+                            .size(12.0)
+                            .monospace(),
+                    );
+                } else {
+                    _ui.label(
+                        egui::RichText::new("pipx not found")
+                            .color(DEPS_YELLOW)
+                            .size(12.0)
+                            .monospace(),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Render Subliminal installation status.
+    pub fn render_subliminal_status(&mut self, ui: &mut egui::Ui) {
+        if !self.subliminal_installed && self.subliminal_version.is_some() {
+            ui.label(
+                "Subliminal 2.4.0 or newer is required. Upgrade your Subliminal installation.",
+            );
+        }
+        if self.is_python_installed() {
+            #[cfg(target_os = "linux")]
+            {
+                if !self.is_pipx_installed() {
+                    ui.label(
+                        egui::RichText::new("Subliminal not found")
+                            .color(DEPS_YELLOW)
+                            .size(12.0)
+                            .monospace(),
+                    );
+                    let command = linux_install_command(
+                        "sudo apt install pipx && pipx install subliminal",
+                        "sudo dnf install python3-pipx && pipx install subliminal",
+                        "sudo pacman -S python-pipx && pipx install subliminal",
+                    );
+                    render_dependency_command(ui, "Install missing dependencies:", &command);
+                    return;
+                }
+            }
+            #[cfg(target_os = "macos")]
+            {
+                if !self.is_pipx_installed() && !self.is_subliminal_installed() {
+                    ui.label(
+                        egui::RichText::new("Subliminal not found")
+                            .color(DEPS_YELLOW)
+                            .size(12.0)
+                            .monospace(),
+                    );
+                    let command = macos_install_command(
+                        "pipx && pipx ensurepath && pipx install subliminal",
+                        self.homebrew_installed,
+                    );
+                    let label = if self.homebrew_installed {
+                        "Install pipx and Subliminal:"
+                    } else {
+                        "Install Homebrew, pipx, and Subliminal:"
+                    };
+                    render_dependency_command(ui, label, &command);
+                    return;
+                }
+            }
+            if self.is_subliminal_installed() && !self.installing_subliminal {
+                let raw = self.get_subliminal_version().cloned().unwrap_or_default();
+                let ver = raw
+                    .strip_prefix("subliminal, version ")
+                    .or_else(|| raw.strip_prefix("subliminal "))
+                    .unwrap_or(&raw);
+                ui.label(
+                    egui::RichText::new(format!("Subliminal v{}", ver))
+                        .color(DEPS_YELLOW)
+                        .size(12.0)
+                        .monospace(),
+                );
+            } else if !self.is_subliminal_installed() {
+                ui.label(
+                    egui::RichText::new("Subliminal not found")
+                        .color(DEPS_YELLOW)
+                        .size(12.0)
+                        .monospace(),
+                );
+                #[cfg(windows)]
+                if ui.button("Install Subliminal").clicked() {
+                    info!("User initiated Subliminal installation");
+                    self.start_subliminal_install();
+                }
+                #[cfg(target_os = "linux")]
+                render_dependency_command(ui, "Install Subliminal:", "pipx install subliminal");
+                #[cfg(target_os = "macos")]
+                render_dependency_command(ui, "Install Subliminal:", "pipx install subliminal");
+            }
+        }
+        if self.is_version_checked() {
+            if let Some(latest) = self.get_latest_version() {
+                if Self::is_outdated(APP_VERSION, latest) {
+                    let exe_url = format!(
+                        "https://github.com/AnimaTheAeon/Jenova/releases/tag/{}",
+                        latest
+                    );
+                    let link_text = format!("-> Jenova {}", latest);
+                    let link_rich =
+                        egui::RichText::new(link_text).color(egui::Color32::from_rgb(3, 169, 244));
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            egui::RichText::new(
+                                "Your version is out of date. Download the latest release: ",
+                            )
+                            .color(egui::Color32::from_rgb(244, 67, 54)),
+                        );
+                        let resp = ui.hyperlink_to(link_rich, exe_url);
+                        if resp.hovered() {
+                            let painter = ui.painter();
+                            let rect = resp.rect;
+                            let y = rect.bottom() - 2.0;
+                            painter.line_segment(
+                                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(3, 169, 244)),
+                            );
+                        }
+                    });
                 }
             } else if let Some(err) = self.get_version_check_error() {
                 ui.label(
@@ -944,6 +1197,10 @@ pub(crate) fn render_jobs_table(
 impl eframe::App for SubtitleDownloader {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Hide the window the moment X is clicked; cleanup happens after.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
         ctx.style_mut_of(egui::Theme::Dark, |style| {
             style.spacing.scroll.floating = false;
             style.spacing.scroll.bar_width = 8.0;
@@ -1036,7 +1293,7 @@ impl eframe::App for SubtitleDownloader {
                 let _ = tx.send(());
             });
 
-            match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(_) => {
                     info!("Background thread exited gracefully");
                 }

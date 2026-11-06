@@ -30,7 +30,7 @@ static VERSION_PTR: Lazy<std::sync::Arc<std::sync::Mutex<VersionCheckState>>> =
 const VERSION_CHECK_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const VERSION_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const MAX_STATUS_BUFFER_BYTES: usize = 64 * 1024;
-const WORKER_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(2_000);
+const WORKER_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
 
 fn join_worker_with_timeout(handle: Option<thread::JoinHandle<()>>, worker_name: &str) {
     let Some(handle) = handle else {
@@ -949,10 +949,12 @@ impl SubtitleDownloader {
 
     /// Stop scan and download workers.
     pub fn prepare_for_exit(&mut self) {
+        // Signal everything first so threads stop in parallel.
         self.shutdown_flag.store(true, Ordering::Relaxed);
-        self.watch.shutdown();
         self.scan_cancel_flag.store(true, Ordering::SeqCst);
         self.cancel_flag.store(true, Ordering::SeqCst);
+        self.watch.cancel_batch();
+        self.watch.shutdown();
         join_worker_with_timeout(self.scan_thread_handle.take(), "scan");
         join_worker_with_timeout(self.download_thread_handle.take(), "download");
     }

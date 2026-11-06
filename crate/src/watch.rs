@@ -240,7 +240,7 @@ impl WatchService {
                 let _ = handle.join();
                 let _ = done_tx.send(());
             });
-            let _ = done_rx.recv_timeout(Duration::from_secs(3));
+            let _ = done_rx.recv_timeout(Duration::from_millis(300));
         }
     }
 }
