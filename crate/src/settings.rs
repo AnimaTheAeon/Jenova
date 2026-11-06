@@ -57,6 +57,8 @@ pub struct Settings {
     pub notify_in_app: bool,
     #[serde(default)]
     pub background_service: bool,
+    #[serde(default = "default_true")]
+    pub check_updates: bool,
 }
 
 fn default_settle_seconds() -> u64 {
@@ -132,6 +134,7 @@ impl Default for Settings {
             notify_desktop: true,
             notify_in_app: true,
             background_service: false,
+            check_updates: true,
         }
     }
 }

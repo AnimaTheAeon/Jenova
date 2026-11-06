@@ -482,40 +482,6 @@ impl Default for SubtitleDownloader {
             let _ = init_tx.send(probe_startup_dependencies());
         });
 
-        // Check for updates in the background.
-        let version_ptr_clone = VERSION_PTR.clone();
-        thread::spawn(move || {
-            let url = "https://api.github.com/repos/AnimaTheAeon/Jenova/releases/latest";
-            let (mut latest, mut err) = (None, None);
-            let client = reqwest::blocking::Client::builder()
-                .connect_timeout(VERSION_CHECK_CONNECT_TIMEOUT)
-                .timeout(VERSION_CHECK_TIMEOUT)
-                .build();
-            match client.and_then(|client| {
-                client
-                    .get(url)
-                    .header("User-Agent", "jenova-version-check")
-                    .send()
-            }) {
-                Ok(r) if !r.status().is_success() => {
-                    err = Some(format!("HTTP error: {}", r.status()));
-                }
-                Ok(r) => {
-                    if let Ok(json) = r.json::<serde_json::Value>() {
-                        if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
-                            latest = Some(tag.to_string());
-                        } else {
-                            err = Some("No tag_name in response".to_string());
-                        }
-                    } else {
-                        err = Some("Failed to parse JSON".to_string());
-                    }
-                }
-                Err(e) => err = Some(format!("HTTP error: {}", e)),
-            }
-            *version_ptr_clone.lock().unwrap_or_else(|e| e.into_inner()) = (latest, err, true);
-        });
-
         let scan_history = Arc::new(Mutex::new(ScanHistory::load()));
         Self {
             downloads_completed: 0,
@@ -591,6 +557,8 @@ impl Default for SubtitleDownloader {
             notify_in_app: settings.notify_in_app,
             background_service: settings.background_service,
             background_checked: false,
+            updater: Arc::new(crate::updater::Updater::default()),
+            check_updates: settings.check_updates,
             apply_in_progress: Arc::new(AtomicBool::new(false)),
             settings_applied_at: None,
             menu_page: MenuPage::Watch,
@@ -627,6 +595,7 @@ impl SubtitleDownloader {
             notify_desktop: self.notify_desktop,
             notify_in_app: self.notify_in_app,
             background_service: self.background_service,
+            check_updates: self.check_updates,
         }
     }
 
@@ -713,6 +682,14 @@ impl SubtitleDownloader {
         if !self.background_checked {
             self.background_checked = true;
             self.ensure_background_service();
+            std::thread::spawn(crate::updater::cleanup_old_exe);
+            if self.check_updates {
+                crate::updater::check_in_background(
+                    Arc::clone(&self.updater),
+                    false,
+                    Some(ctx.clone()),
+                );
+            }
         }
         crate::notifications::set_context(ctx);
         crate::notifications::DESKTOP_ENABLED
