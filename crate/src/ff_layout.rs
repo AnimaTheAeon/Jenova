@@ -86,6 +86,11 @@ impl SubtitleDownloader {
             });
         });
 
+        self.render_in_app_toasts(
+            &ui.ctx().clone(),
+            pos2(main.right() - 14.0, main.top() + 14.0),
+        );
+
         ff::window_at(ui, main, "ff_main", |ui| {
             if !deps_ready {
                 self.render_config_page(ui);
@@ -116,6 +121,43 @@ impl SubtitleDownloader {
                 MenuPage::Log => self.render_log_page(ui),
             }
         });
+    }
+
+    /// Menu-style "Subtitles found" pop-ups in the top-right of the main window.
+    pub fn render_in_app_toasts(&self, ctx: &egui::Context, anchor: egui::Pos2) {
+        let toasts = crate::notifications::in_app_toasts();
+        if toasts.is_empty() {
+            return;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        let mut y = anchor.y;
+        for (index, item) in toasts.iter().enumerate().rev() {
+            let age = item.shown_at.elapsed().as_secs_f32();
+            let life = crate::notifications::IN_APP_LIFETIME.as_secs_f32();
+            let slide = ((age / 0.25).min(1.0) - 1.0) * -30.0;
+            let fade = ((life - age) / 0.6).clamp(0.0, 1.0);
+            let area = egui::Area::new(egui::Id::new(("ff_toast", index)))
+                .order(egui::Order::Foreground)
+                .pivot(egui::Align2::RIGHT_TOP)
+                .fixed_pos(egui::pos2(anchor.x + slide, y))
+                .interactable(true)
+                .show(ctx, |ui| {
+                    ui.set_opacity(fade);
+                    ui.set_max_width(340.0);
+                    ff::window(ui, |ui| {
+                        ui.set_width(300.0);
+                        ff::title(ui, &item.toast.title, 15.0, LABEL);
+                        ui.add(
+                            egui::Label::new(RichText::new(&item.toast.body).color(TEXT).strong())
+                                .wrap(),
+                        );
+                    })
+                });
+            if area.response.interact(egui::Sense::click()).clicked() {
+                crate::notifications::dismiss_in_app(index);
+            }
+            y += area.response.rect.height() + 10.0;
+        }
     }
 
     fn status_line(&self) -> String {
@@ -444,6 +486,17 @@ impl SubtitleDownloader {
                         .changed();
                 }
             });
+            ff::divider(ui);
+            ff::stat_label(ui, "NOTIFICATIONS");
+            changed |= ui
+                .checkbox(
+                    &mut self.notify_desktop,
+                    "Desktop notification when subtitles are found",
+                )
+                .changed();
+            changed |= ui
+                .checkbox(&mut self.notify_in_app, "Pop-up inside Jenova when subtitles are found")
+                .changed();
             if changed {
                 self.save_current_settings();
             }

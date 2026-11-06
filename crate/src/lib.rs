@@ -11,6 +11,7 @@ pub mod scan_history;
 pub mod settings;
 pub mod subtitle_utils;
 pub mod watch;
+pub mod notifications;
 pub mod ff_theme;
 pub mod ff_layout;
 

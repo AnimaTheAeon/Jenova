@@ -51,6 +51,10 @@ pub struct Settings {
     pub watch_poll_interval_seconds: u64,
     #[serde(default = "default_true")]
     pub watch_options_open: bool,
+    #[serde(default = "default_true")]
+    pub notify_desktop: bool,
+    #[serde(default = "default_true")]
+    pub notify_in_app: bool,
 }
 
 fn default_settle_seconds() -> u64 {
@@ -123,6 +127,8 @@ impl Default for Settings {
             watch_polling: false,
             watch_poll_interval_seconds: default_poll_interval(),
             watch_options_open: true,
+            notify_desktop: true,
+            notify_in_app: true,
         }
     }
 }

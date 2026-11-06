@@ -144,6 +144,8 @@ pub struct SubtitleDownloader {
     pub watch_polling: bool,
     pub watch_poll_interval_seconds: u64,
     pub watch_options_open: bool,
+    pub notify_desktop: bool,
+    pub notify_in_app: bool,
     pub menu_page: MenuPage,
     pub app_started: std::time::Instant,
 }

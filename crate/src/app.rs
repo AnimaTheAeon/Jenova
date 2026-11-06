@@ -587,6 +587,8 @@ impl Default for SubtitleDownloader {
             watch_polling: settings.watch_polling,
             watch_poll_interval_seconds: settings.watch_poll_interval_seconds,
             watch_options_open: settings.watch_options_open,
+            notify_desktop: settings.notify_desktop,
+            notify_in_app: settings.notify_in_app,
             menu_page: MenuPage::Watch,
             app_started: std::time::Instant::now(),
         }
@@ -618,12 +620,19 @@ impl SubtitleDownloader {
             watch_polling: self.watch_polling,
             watch_poll_interval_seconds: self.watch_poll_interval_seconds,
             watch_options_open: self.watch_options_open,
+            notify_desktop: self.notify_desktop,
+            notify_in_app: self.notify_in_app,
         }
     }
 
     /// Keep the folder watcher in sync with the current settings.
     pub fn sync_watch_service(&mut self, ctx: &eframe::egui::Context) {
         self.watch.set_repaint_context(ctx);
+        crate::notifications::set_context(ctx);
+        crate::notifications::DESKTOP_ENABLED
+            .store(self.notify_desktop, std::sync::atomic::Ordering::Relaxed);
+        crate::notifications::IN_APP_ENABLED
+            .store(self.notify_in_app, std::sync::atomic::Ordering::Relaxed);
         self.watch
             .update_runtime(self.settings_snapshot(), self.subliminal_command.clone());
         let target = if self.watch_enabled && self.dependencies_ready() {
@@ -2068,6 +2077,7 @@ pub(crate) fn run_download_batch(params: BatchParams) {
                     if langs.is_empty() {
                         langs = langs_clone.clone();
                     }
+                    crate::notifications::subtitle_found(&job_path, &langs);
                     if !langs.is_empty() {
                         if let Ok(mut history) = history_clone.lock() {
                             let hearing_impaired_langs = ScanHistory::hearing_impaired_langs(
