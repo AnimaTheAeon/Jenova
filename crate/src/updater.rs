@@ -380,6 +380,54 @@ fn old_path(exe: &Path) -> PathBuf {
     exe.with_file_name(name)
 }
 
+/// Where to move the running exe. Clears a leftover from an earlier update
+/// first; if that leftover is still locked (an old Jenova never exited), its
+/// process is ended, and failing that a fresh name is used so the update
+/// isn't blocked.
+fn aside_path(exe: &Path) -> PathBuf {
+    let old = old_path(exe);
+    if !old.exists() || std::fs::remove_file(&old).is_ok() {
+        return old;
+    }
+    end_processes_running(&old);
+    for _ in 0..10 {
+        if std::fs::remove_file(&old).is_ok() || !old.exists() {
+            return old;
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    let stamp = chrono::Local::now().format("%Y%m%d%H%M%S");
+    let mut name = old.file_name().unwrap_or_default().to_os_string();
+    name.push(format!("-{stamp}"));
+    old.with_file_name(name)
+}
+
+/// Leftover exes from earlier updates next to `exe` ("jenova.exe.old",
+/// "jenova.exe.old-20261108...").
+fn leftover_exes(exe: &Path) -> Vec<PathBuf> {
+    let prefix = old_path(exe)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let Some(dir) = exe.parent() else {
+        return Vec::new();
+    };
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_file()
+                        && p.file_name()
+                            .map(|n| n.to_string_lossy().to_ascii_lowercase())
+                            .is_some_and(|n| n == prefix || n.starts_with(&format!("{prefix}-")))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Swap the running exe for `new_bytes`. A running exe can't be overwritten
 /// on Windows but it can be renamed, so: write new -> rename old aside ->
 /// move new into place. Rolls back if the last step fails.
@@ -391,12 +439,11 @@ pub fn replace_exe(exe: &Path, new_bytes: &[u8]) -> Result<(), String> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755));
     }
-    let old = old_path(exe);
-    let _ = std::fs::remove_file(&old);
+    let old = aside_path(exe);
     if let Err(error) = std::fs::rename(exe, &old) {
         let _ = std::fs::remove_file(&staged);
         return Err(format!(
-            "Couldn't replace Jenova (is the folder read-only?): {error}"
+            "Windows wouldn't let Jenova replace itself: {error}. Close any other Jenova windows and try again, or download the new version from the release page."
         ));
     }
     if let Err(error) = std::fs::rename(&staged, exe) {
@@ -419,13 +466,15 @@ pub fn cleanup_old_exe() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    let old = old_path(&exe);
-    if !old.exists() {
-        return;
+    for old in leftover_exes(&exe) {
+        remove_leftover(&old);
     }
+}
+
+fn remove_leftover(old: &Path) {
     let try_delete = |tries: u32| {
         for _ in 0..tries {
-            if std::fs::remove_file(&old).is_ok() || !old.exists() {
+            if std::fs::remove_file(old).is_ok() || !old.exists() {
                 return true;
             }
             std::thread::sleep(Duration::from_millis(500));
@@ -439,7 +488,7 @@ pub fn cleanup_old_exe() {
     }
     // Still locked: an old Jenova is still running from that file.
     warn!("{} is still in use; ending the old process", old.display());
-    end_processes_running(&old);
+    end_processes_running(old);
     if try_delete(20) {
         info!("Removed leftover {}", old.display());
         return;
@@ -448,7 +497,7 @@ pub fn cleanup_old_exe() {
     if let Some(dir) = old_versions_dir() {
         let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
         let target = dir.join(format!("jenova-{stamp}.exe.old"));
-        match std::fs::rename(&old, &target) {
+        match std::fs::rename(old, &target) {
             Ok(()) => {
                 info!("Moved leftover exe to {}", target.display());
             }
@@ -604,6 +653,36 @@ mod tests {
         let out = extract_exe("jenova-windows-x64.zip", buf.into_inner()).unwrap();
         assert!(out.starts_with(b"MZ"));
         assert_eq!(out.len(), 4096);
+    }
+
+    #[test]
+    fn stuck_leftover_does_not_block_the_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("jenova.exe");
+        std::fs::write(&exe, b"current").unwrap();
+        // A leftover that can't be deleted (a non-empty folder stands in for
+        // a file locked by a hung process).
+        let stuck = old_path(&exe);
+        std::fs::create_dir(&stuck).unwrap();
+        std::fs::write(stuck.join("x"), b"x").unwrap();
+
+        let mut new = b"MZ".to_vec();
+        new.resize(2048, 1);
+        replace_exe(&exe, &new).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), new);
+        let aside: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("jenova.exe.old-"))
+            .collect();
+        assert_eq!(aside.len(), 1, "current exe set aside under a new name");
+        assert_eq!(
+            std::fs::read(dir.path().join(&aside[0])).unwrap(),
+            b"current"
+        );
+        // Cleanup finds both kinds of leftover file.
+        assert_eq!(leftover_exes(&exe).len(), 1);
     }
 
     #[test]
