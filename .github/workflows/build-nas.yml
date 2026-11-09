@@ -37,7 +37,7 @@ jobs:
         id: spk
         run: |
           SPK=$(BUILD_NUMBER=$(printf '%04d' ${{ github.run_number }}) ./build-spk.sh target/x86_64-unknown-linux-musl/release/jenova-nas dist)
-          echo "file=nas/$SPK" >> "$GITHUB_OUTPUT"
+          echo "file=$SPK" >> "$GITHUB_OUTPUT"
           echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
@@ -50,7 +50,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "nas-v${{ steps.spk.outputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+          # "Exists" only counts if the .spk is attached.
+          n=$(gh release view "nas-v${{ steps.spk.outputs.version }}" --repo "${{ github.repository }}" --json assets --jq '[.assets[].name | select(endswith(".spk"))] | length' 2>/dev/null || echo 0)
+          if [ "${n:-0}" -gt 0 ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
