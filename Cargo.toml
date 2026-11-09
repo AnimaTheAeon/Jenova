@@ -2,6 +2,8 @@
 # Run from repo root: cargo run, cargo build, etc.
 [workspace]
 members = ["crate"]
+# The Synology version builds on its own (Linux-only, static binary).
+exclude = ["nas"]
 resolver = "2"
 
 [profile.release]

@@ -1,0 +1,16 @@
+#!/bin/sh
+mkdir -p "$SYNOPKG_PKGVAR"
+{
+cat << 'NOTE'
+<p style="font-weight:bold;">One more step: let Jenova into your media folders</p>
+<p>Jenova runs as its own system user, so it can only see folders you allow. For each shared folder you want watched (for example <b>video</b>):</p>
+<ol style="list-style-type:decimal;list-style-position:inside;">
+<li>Open <b>Control Panel</b> &rarr; <b>Shared Folder</b></li>
+<li>Select the folder and click <b>Edit</b> &rarr; <b>Permissions</b></li>
+<li>Switch the list from <b>Local users</b> to <b>System internal user</b></li>
+<li>Tick <b>Read/Write</b> for <b>Jenova</b> and click <b>Save</b></li>
+</ol>
+<p>Then open <b>Jenova</b> from the main menu and add your folders. The first start installs Subliminal, which takes a few minutes.</p>
+NOTE
+} >> "$SYNOPKG_TEMP_LOGFILE"
+exit 0

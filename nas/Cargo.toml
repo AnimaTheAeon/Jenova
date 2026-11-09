@@ -1,0 +1,28 @@
+[package]
+name = "jenova-nas"
+version = "1.0.0"
+edition = "2021"
+description = "Jenova for Synology DSM: watches folders and downloads subtitles for new videos."
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "jenova-nas"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+notify = { version = "8", default-features = false }
+tiny_http = "0.12"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
