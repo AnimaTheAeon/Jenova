@@ -3,6 +3,7 @@ name: Build Windows
 on:
   push:
     branches: [main]
+    paths-ignore: ["nas/**", ".github/workflows/build-nas.yml"]
     # Pushing a version tag builds the exe and creates the release.
     tags: ["v*"]
   pull_request:

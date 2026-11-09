@@ -1,0 +1,21 @@
+{
+	"Jenova.js": {
+		"Jenova.AppInstance": {
+			"type": "app",
+			"title": "app:name",
+			"desc": "app:description",
+			"icon": "images/jenova_{0}.png",
+			"texts": "texts",
+			"allowMultiInstance": false,
+			"allUsers": false,
+			"appWindow": "Jenova.AppWindow",
+			"depend": ["Jenova.AppWindow"]
+		},
+		"Jenova.AppWindow": {
+			"type": "lib",
+			"title": "app:name",
+			"icon": "images/jenova_{0}.png",
+			"texts": "texts"
+		}
+	}
+}

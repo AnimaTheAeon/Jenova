@@ -1,0 +1,3 @@
+[app]
+name = "Jenova"
+description = "Watches your media folders and downloads subtitles for new videos automatically."
