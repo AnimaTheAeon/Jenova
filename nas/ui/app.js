@@ -173,8 +173,30 @@ function renderStatus() {
     help.innerHTML = esc(s.message) + "<br>Check the NAS can reach the internet, then click Reinstall.";
   }
   $("#reinstall").disabled = s.state === "installing" || s.state === "checking";
+  renderCleanup(status.cleanup || { state: "idle" });
   $("#about").textContent = `Jenova for DSM v${status.version}`;
   renderStatusBar();
+}
+
+function renderCleanup(c) {
+  const text = $("#cleanup-text"), buttons = $("#cleanup-buttons");
+  const set = (msg, cls, html) => { text.textContent = msg; text.className = cls; buttons.innerHTML = html; };
+  switch (c.state) {
+    case "searching": set("Searching your watched folders…", "warn", ""); break;
+    case "deleting": set("Deleting…", "warn", ""); break;
+    case "found":
+      if (!c.count) set("No subtitle backups found.", "good", `<button class="small" data-cleanup="reset">OK</button>`);
+      else set(`Found ${c.count.toLocaleString()} subtitle backup file(s).`, "warn",
+        `<button data-cleanup="delete">Delete ${c.count.toLocaleString()} files</button> <button class="small" data-cleanup="reset">Cancel</button>`);
+      break;
+    case "done":
+      set(c.failed ? `Deleted ${c.deleted} file(s); ${c.failed} couldn't be deleted (check Jenova's Read/Write permission).` : `Deleted ${c.deleted.toLocaleString()} file(s).`,
+        "good", `<button class="small" data-cleanup="reset">OK</button>`);
+      break;
+    default:
+      set("Older Windows versions saved copies like Movie.en.srt.bak next to your subtitles.", "dim",
+        `<button data-cleanup="find" ${status && status.folders.length ? "" : "disabled"}>Find .bak files</button>`);
+  }
 }
 
 function renderStatusBar() {
@@ -200,7 +222,7 @@ function renderJobs(jobs) {
   $("#jobs-empty").style.display = jobs.length ? "none" : "";
   const label = {
     found: ["Found", "good"], none: ["None found", "warn"], failed: ["Failed", "bad"],
-    running: ["Searching…", "warn"], queued: ["Waiting", "dim"],
+    running: ["Searching…", "warn"], queued: ["Waiting", "dim"], skipped: ["Already had subs", "dim"],
   };
   body.innerHTML = jobs.map((j) => {
     const [text, cls] = label[j.status] || [j.status, ""];
@@ -341,6 +363,13 @@ function wireActions() {
   };
   $("#clear-jobs").onclick = async () => { await api("jobs/clear", {}); refresh(); };
   $("#reinstall").onclick = async () => { await api("subliminal/reinstall", {}); refreshStatus(); };
+  $("#cleanup-buttons").onclick = async (e) => {
+    const b = e.target.closest("[data-cleanup]");
+    if (!b) return;
+    await api("cleanup/" + b.dataset.cleanup, {});
+    refreshStatus();
+    setTimeout(refreshStatus, 800);
+  };
 }
 
 // ---------- polling ----------

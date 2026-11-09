@@ -1,6 +1,5 @@
 //! Subtitle file utilities and language detection.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use crate::python_manager::PythonManager;
@@ -149,65 +148,51 @@ impl SubtitleUtils {
         files
     }
 
-    /// Back up existing subtitles before an overwrite.
-    pub fn backup_subtitle_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
-        let mut backups = Vec::with_capacity(paths.len());
-        for path in paths {
-            let mut source = std::fs::File::open(path)
-                .map_err(|error| format!("{}: {}", path.display(), error))?;
-            let file_name = path
-                .file_name()
-                .ok_or_else(|| format!("subtitle path has no file name: {}", path.display()))?;
-            let mut backup_name = OsString::from(file_name);
-            backup_name.push(".bak");
-            let mut index = 0;
-            loop {
-                let backup_path = if index == 0 {
-                    path.with_file_name(&backup_name)
-                } else {
-                    let mut numbered_name = OsString::from(&backup_name);
-                    numbered_name.push(format!(".{}", index));
-                    path.with_file_name(numbered_name)
-                };
-                let mut destination = match std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&backup_path)
-                {
-                    Ok(file) => file,
-                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                        index += 1;
-                        continue;
-                    }
-                    Err(error) => {
-                        return Err(format!(
-                            "{} -> {}: {}",
-                            path.display(),
-                            backup_path.display(),
-                            error
-                        ));
-                    }
-                };
+    /// A backup an older version left next to a subtitle, e.g.
+    /// "Movie.en.srt.bak" or "Movie.en.srt.bak.3".
+    pub fn is_subtitle_backup(path: &Path) -> bool {
+        const EXTENSIONS: &[&str] = &["srt", "sub", "ssa", "ass", "vtt"];
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        let lower = name.to_ascii_lowercase();
+        let Some(i) = lower.rfind(".bak") else {
+            return false;
+        };
+        let rest = &lower[i + 4..];
+        let numbered = rest
+            .strip_prefix('.')
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+        if !(rest.is_empty() || numbered) {
+            return false;
+        }
+        let base = &lower[..i];
+        EXTENSIONS
+            .iter()
+            .any(|ext| base.ends_with(&format!(".{ext}")))
+    }
 
-                if let Err(error) = std::io::copy(&mut source, &mut destination) {
-                    let _ = std::fs::remove_file(&backup_path);
-                    return Err(format!(
-                        "{} -> {}: {}",
-                        path.display(),
-                        backup_path.display(),
-                        error
-                    ));
+    /// Find subtitle backups under `roots`.
+    pub fn find_subtitle_backups(roots: &[PathBuf]) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+        let mut stack: Vec<PathBuf> = roots.to_vec();
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                let path = entry.path();
+                if kind.is_dir() {
+                    stack.push(path);
+                } else if kind.is_file() && Self::is_subtitle_backup(&path) {
+                    found.push(path);
                 }
-                crate::info!(
-                    "Backed up subtitle {} to {}",
-                    path.display(),
-                    backup_path.display()
-                );
-                backups.push(backup_path);
-                break;
             }
         }
-        Ok(backups)
+        found
     }
 
     /// Convert a language code to a display name.
@@ -552,51 +537,6 @@ mod tests {
     }
 
     #[test]
-    fn creates_numbered_backups_without_replacing_existing_backups() {
-        let folder = std::env::temp_dir().join(format!(
-            "jenova-backup-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&folder).unwrap();
-        let subtitle = folder.join("Movie.en.srt");
-        std::fs::write(&subtitle, "old").unwrap();
-
-        let first = SubtitleUtils::backup_subtitle_files(std::slice::from_ref(&subtitle)).unwrap();
-        assert_eq!(first, vec![folder.join("Movie.en.srt.bak")]);
-        assert_eq!(std::fs::read_to_string(&first[0]).unwrap(), "old");
-
-        std::fs::write(&subtitle, "new").unwrap();
-        let second = SubtitleUtils::backup_subtitle_files(std::slice::from_ref(&subtitle)).unwrap();
-        assert_eq!(second, vec![folder.join("Movie.en.srt.bak.1")]);
-        assert_eq!(std::fs::read_to_string(&second[0]).unwrap(), "new");
-
-        std::fs::remove_dir_all(folder).unwrap();
-    }
-
-    #[test]
-    fn reports_missing_subtitle_backup_source() {
-        let folder = std::env::temp_dir().join(format!(
-            "jenova-missing-backup-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&folder).unwrap();
-        let path = folder.join("missing.srt");
-
-        let result = SubtitleUtils::backup_subtitle_files(&[path]);
-
-        assert!(result.is_err());
-        std::fs::remove_dir_all(folder).unwrap();
-    }
-
-    #[test]
     fn missing_subtitle_uses_language_generic_and_sdh_rules() {
         let folder = std::env::temp_dir().join(format!(
             "jenova-missing-sub-test-{}-{}",
@@ -637,5 +577,26 @@ mod tests {
         ));
 
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn recognises_subtitle_backups_only() {
+        for yes in [
+            "Movie.en.srt.bak",
+            "Movie.srt.bak.3",
+            "Show.S01E01.ass.BAK",
+            "a.vtt.bak.12",
+        ] {
+            assert!(SubtitleUtils::is_subtitle_backup(Path::new(yes)), "{yes}");
+        }
+        for no in [
+            "Movie.mkv.bak",
+            "Movie.en.srt",
+            "notes.bak",
+            "Movie.srt.bak.x",
+            "Movie.srt.bakery",
+        ] {
+            assert!(!SubtitleUtils::is_subtitle_backup(Path::new(no)), "{no}");
+        }
     }
 }

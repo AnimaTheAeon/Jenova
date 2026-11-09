@@ -27,8 +27,6 @@ type VersionCheckState = (Option<String>, Option<String>, bool);
 static VERSION_PTR: Lazy<std::sync::Arc<std::sync::Mutex<VersionCheckState>>> =
     Lazy::new(|| std::sync::Arc::new(std::sync::Mutex::new((None, None, false))));
 
-const VERSION_CHECK_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-const VERSION_CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const MAX_STATUS_BUFFER_BYTES: usize = 64 * 1024;
 const WORKER_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
 
@@ -562,6 +560,7 @@ impl Default for SubtitleDownloader {
             apply_in_progress: Arc::new(AtomicBool::new(false)),
             settings_applied_at: None,
             menu_page: MenuPage::Watch,
+            bak_cleanup: Arc::new(Mutex::new(crate::data_structures::BakCleanup::Idle)),
             app_started: std::time::Instant::now(),
         }
     }
@@ -773,7 +772,7 @@ impl SubtitleDownloader {
         let videos_missing_subs = Arc::clone(&self.videos_missing_subs);
         let folder_path = self.folder_path.clone();
         let selected_languages = scan_settings.selected_languages.clone();
-        let overwrite_existing = scan_settings.overwrite_existing;
+        let overwrite_existing = false;
         let skip_scanned_media = scan_settings.skip_scanned_media;
         let ignore_local_extras = scan_settings.ignore_local_extras;
         let exclude_hearing_impaired = scan_settings.exclude_hearing_impaired;
@@ -1826,22 +1825,20 @@ pub(crate) fn run_download_batch(params: BatchParams) {
                             subtitle_file_signature(path).map(|signature| (path.clone(), signature))
                         })
                         .collect();
-                if overwrite_existing {
-                    let overwrite_targets = SubtitleUtils::find_all_subtitle_files_in_listing(
-                        &job_path,
-                        &langs_clone,
-                        &existing_subtitles,
-                    );
-                    if let Err(error) = SubtitleUtils::backup_subtitle_files(&overwrite_targets) {
-                        let mut jobs_lock = jobs_clone.lock().unwrap_or_else(|e| e.into_inner());
-                        if let Some(job) = jobs_lock.get_mut(idx) {
-                            job.status = JobStatus::Failed(format!(
-                                "Failed to back up existing subtitles: {}",
-                                error
-                            ));
-                        }
-                        return;
+                // Never download over subtitles that are already there.
+                if !SubtitleUtils::video_missing_subtitle_in_listing(
+                    &job_path,
+                    &langs_clone,
+                    exclude_hearing_impaired,
+                    &existing_subtitles,
+                ) {
+                    let mut jobs_lock = jobs_clone.lock().unwrap_or_else(|e| e.into_inner());
+                    if let Some(job) = jobs_lock.get_mut(idx) {
+                        job.status = JobStatus::Skipped;
+                        job.output = "Already has subtitles in your languages".to_string();
                     }
+                    info!("Skipped (already has subtitles): {}", job_path.display());
+                    return;
                 }
 
                 // Use a private cache for each concurrent Subliminal process.

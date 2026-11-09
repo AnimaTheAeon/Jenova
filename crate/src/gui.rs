@@ -505,17 +505,6 @@ impl SubtitleDownloader {
                 self.save_current_settings();
             }
             ui.add_space(0.0);
-            let overwrite_existing = self.get_overwrite_existing_mut();
-            let overwrite_checkbox_response = ui.checkbox(overwrite_existing, "Overwrite Existing Subtitles");
-            if overwrite_checkbox_response.changed() {
-                info!("(Overwrite Existing Subtitles) changed to: {}", *overwrite_existing);
-                self.set_keep_dropdown_open(false);
-                self.save_current_settings();
-                if !self.get_folder_path().is_empty() {
-                    self.scan_folder();
-                }
-            }
-
             let ignore_local_extras = self.get_ignore_local_extras_mut();
             let ignore_extras_checkbox_response = ui.checkbox(ignore_local_extras, "Ignore Extra Folders for Plex")
                 .on_hover_ui(|ui| {

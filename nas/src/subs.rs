@@ -5,6 +5,28 @@ use std::path::{Path, PathBuf};
 pub struct SubtitleUtils;
 
 impl SubtitleUtils {
+    /// A backup an older Windows version left next to a subtitle, e.g.
+    /// "Movie.en.srt.bak" or "Movie.en.srt.bak.3".
+    pub fn is_subtitle_backup(path: &Path) -> bool {
+        const EXTENSIONS: &[&str] = &["srt", "sub", "ssa", "ass", "vtt"];
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+        let lower = name.to_ascii_lowercase();
+        let Some(i) = lower.rfind(".bak") else {
+            return false;
+        };
+        let rest = &lower[i + 4..];
+        let numbered = rest
+            .strip_prefix('.')
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+        if !(rest.is_empty() || numbered) {
+            return false;
+        }
+        let base = &lower[..i];
+        EXTENSIONS.iter().any(|ext| base.ends_with(&format!(".{ext}")))
+    }
+
     /// List subtitle files in a folder.
     pub fn list_subtitle_files_in_folder(folder: &Path) -> Vec<PathBuf> {
         const EXTENSIONS: &[&str] = &["srt", "sub", "ssa", "ass", "vtt"];
@@ -143,6 +165,7 @@ impl SubtitleUtils {
 #[cfg(test)]
 mod tests {
     use super::SubtitleUtils;
+    use std::path::Path;
 
 
     #[test]
@@ -191,5 +214,15 @@ mod tests {
         ));
 
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn recognises_subtitle_backups_only() {
+        for yes in ["Movie.en.srt.bak", "Movie.srt.bak.3", "Show.S01E01.ass.BAK"] {
+            assert!(SubtitleUtils::is_subtitle_backup(Path::new(yes)), "{yes}");
+        }
+        for no in ["Movie.mkv.bak", "Movie.en.srt", "notes.bak", "Movie.srt.bak.x"] {
+            assert!(!SubtitleUtils::is_subtitle_backup(Path::new(no)), "{no}");
+        }
     }
 }
