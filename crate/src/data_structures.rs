@@ -153,6 +153,8 @@ pub struct SubtitleDownloader {
     pub apply_in_progress: Arc<std::sync::atomic::AtomicBool>,
     pub settings_applied_at: Option<std::time::Instant>,
     pub menu_page: MenuPage,
+    /// The side menu has been clicked this session (shows the hand cursor).
+    pub menu_touched: bool,
     pub bak_cleanup: Arc<Mutex<BakCleanup>>,
     pub app_started: std::time::Instant,
 }

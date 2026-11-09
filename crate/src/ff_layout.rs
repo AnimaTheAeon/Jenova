@@ -54,8 +54,15 @@ impl SubtitleDownloader {
         ff::window_at(ui, menu, "ff_menu", |ui| {
             for (page, label) in MENU {
                 let enabled = deps_ready || *page == MenuPage::Config;
-                let response = ff::menu_item(ui, label, self.menu_page == *page, enabled);
+                // No cursor on the selected item until the menu is used.
+                let response = ff::menu_item(
+                    ui,
+                    label,
+                    self.menu_touched && self.menu_page == *page,
+                    enabled,
+                );
                 if enabled && response.clicked() {
+                    self.menu_touched = true;
                     self.menu_page = *page;
                     self.set_keep_dropdown_open(*page == MenuPage::Language);
                 }
@@ -296,20 +303,10 @@ impl SubtitleDownloader {
                             });
                             ui.label(RichText::new(folder).color(TEXT_DIM).size(12.0));
                             ui.horizontal(|ui| {
-                                ff::stat_label(ui, "LV");
-                                let videos = stats
-                                    .map(|s| s.videos.to_string())
-                                    .unwrap_or_else(|| "--".into());
-                                ui.label(RichText::new(videos).strong());
-                                ui.add_space(14.0);
                                 ff::stat_label(ui, "SUBS");
-                                let (fraction, caption) = match stats {
-                                    Some(s) if s.videos > 0 => (
-                                        s.with_subs as f32 / s.videos as f32,
-                                        format!("{}/{}", s.with_subs, s.videos),
-                                    ),
-                                    Some(_) => (0.0, "0/0".into()),
-                                    None => (0.0, "--/--".into()),
+                                let fraction = match stats {
+                                    Some(s) if s.videos > 0 => s.with_subs as f32 / s.videos as f32,
+                                    _ => 0.0,
                                 };
                                 ff::stat_bar(
                                     ui,
@@ -319,9 +316,8 @@ impl SubtitleDownloader {
                                     egui::Color32::from_rgb(140, 230, 255),
                                 )
                                 .on_hover_text(
-                                    "Videos that already have subtitles in your languages",
+                                    "How much of this folder already has subtitles in your languages",
                                 );
-                                ui.label(RichText::new(caption).strong());
                             });
                         });
                     });

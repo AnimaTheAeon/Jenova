@@ -113,8 +113,9 @@ html, body {
   margin-top: -11px;
   visibility: hidden;
 }
-.menu-item:hover .hand, .menu-item.selected .hand { visibility: visible; }
-.menu-item.selected .hand { animation: bob 0.5s ease-in-out infinite alternate; }
+/* The cursor rests on the selected item only once the menu has been used. */
+.menu-item:hover .hand, .menu-used .menu-item.selected .hand { visibility: visible; }
+.menu-used .menu-item.selected .hand { animation: bob 0.5s ease-in-out infinite alternate; }
 @keyframes bob { from { transform: translateX(0); } to { transform: translateX(-3px); } }
 
 .info-row { display: flex; justify-content: space-between; font-size: 18px; font-weight: 800; }

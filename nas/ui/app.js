@@ -79,7 +79,10 @@ function buildMenu() {
     `<button class="menu-item" data-go="${id}"><svg class="hand"><use href="#hand"/></svg>${label}</button>`).join("");
   nav.addEventListener("click", (e) => {
     const b = e.target.closest("[data-go]");
-    if (b) go(b.dataset.go);
+    if (b) {
+      nav.classList.add("menu-used");
+      go(b.dataset.go);
+    }
   });
   go(location.hash.slice(1) || "watch");
 }
@@ -144,10 +147,8 @@ function renderStatus() {
             <span class="actions"><button class="small" data-remove="${esc(f.path)}">Remove</button></span></div>
           <div class="path">${esc(f.path)}</div>
           <div class="stats">
-            <span class="label">LV</span><span>${videos ?? "--"}</span>
-            <span class="label" style="margin-left:10px">SUBS</span>
-            <span class="bar" title="Videos that already have subtitles in your languages"><i style="width:${pct}%"></i></span>
-            <span>${subs ?? "--"}/${videos ?? "--"}</span>
+            <span class="label">SUBS</span>
+            <span class="bar" title="How much of this folder already has subtitles in your languages"><i style="width:${pct}%"></i></span>
           </div>
           ${help}
         </div></div>`;
