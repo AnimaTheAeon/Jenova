@@ -560,6 +560,7 @@ impl Default for SubtitleDownloader {
             apply_in_progress: Arc::new(AtomicBool::new(false)),
             settings_applied_at: None,
             menu_page: MenuPage::Watch,
+            menu_touched: false,
             bak_cleanup: Arc::new(Mutex::new(crate::data_structures::BakCleanup::Idle)),
             app_started: std::time::Instant::now(),
         }
