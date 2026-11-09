@@ -182,6 +182,18 @@ fn handle(mut req: Request, shared: &Arc<Shared>, cache: &AuthCache) {
         }
         (false, "log") => Ok(json!({ "lines": crate::log::recent() })),
         (false, "browse") => browse(q.get("path").map(String::as_str).unwrap_or("")),
+        (true, "cleanup/find") => {
+            shared.find_backups();
+            Ok(json!({ "ok": true }))
+        }
+        (true, "cleanup/delete") => {
+            shared.delete_backups();
+            Ok(json!({ "ok": true }))
+        }
+        (true, "cleanup/reset") => {
+            shared.reset_cleanup();
+            Ok(json!({ "ok": true }))
+        }
         (true, "subliminal/reinstall") => {
             engine::request_reinstall(shared);
             Ok(json!({ "ok": true }))
@@ -225,6 +237,7 @@ fn status(shared: &Arc<Shared>) -> Value {
         "running": shared.running.load(Ordering::SeqCst),
         "scanning": shared.scanning.load(Ordering::SeqCst) > 0,
         "subs_total": shared.subs_found_total(),
+        "cleanup": shared.cleanup.lock().unwrap_or_else(|e| e.into_inner()).to_json(),
         "user": std::env::var("USER").unwrap_or_default(),
     })
 }

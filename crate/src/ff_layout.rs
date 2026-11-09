@@ -11,6 +11,7 @@ use crate::ff_theme::{self as ff, LABEL, TEXT, TEXT_DIM};
 use crate::gui::render_jobs_table;
 use crate::helper_functions::{Utils, Validation};
 use crate::info;
+use crate::subtitle_utils::SubtitleUtils;
 
 const MENU: &[(MenuPage, &str)] = &[
     (MenuPage::Watch, "Watch"),
@@ -537,12 +538,108 @@ impl SubtitleDownloader {
                 self.save_current_settings();
             }
             ff::divider(ui);
+            self.render_bak_cleanup(ui);
+            ff::divider(ui);
             self.render_updates_section(ui);
             ff::divider(ui);
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("Jenova v{} ·", crate::config::APP_VERSION)).color(TEXT_DIM));
                 ui.hyperlink_to("AnimaTheAeon/Jenova", "https://github.com/AnimaTheAeon/Jenova");
             });
+        });
+    }
+
+    fn render_bak_cleanup(&mut self, ui: &mut egui::Ui) {
+        use crate::data_structures::BakCleanup;
+        ff::stat_label(ui, "SUBTITLE BACKUPS");
+        let state = self
+            .bak_cleanup
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or_default();
+        let mut roots: Vec<std::path::PathBuf> = self
+            .watch_folders
+            .iter()
+            .map(std::path::PathBuf::from)
+            .collect();
+        if !self.folder_path.is_empty() {
+            roots.push(std::path::PathBuf::from(&self.folder_path));
+        }
+        roots.retain(|r| r.is_dir());
+        roots.sort();
+        roots.dedup();
+        let cleanup = std::sync::Arc::clone(&self.bak_cleanup);
+        let ctx = ui.ctx().clone();
+        let set = move |s: BakCleanup| {
+            if let Ok(mut slot) = cleanup.lock() {
+                *slot = s;
+            }
+            ctx.request_repaint();
+        };
+        ui.horizontal_wrapped(|ui| match state {
+            BakCleanup::Idle => {
+                ui.label(RichText::new("Older versions saved copies like Movie.en.srt.bak next to your subtitles.").color(TEXT_DIM));
+                if ui
+                    .add_enabled(!roots.is_empty(), egui::Button::new("Find .bak files"))
+                    .on_hover_text("Searches your watched folders and the last scanned folder")
+                    .clicked()
+                {
+                    set(BakCleanup::Searching);
+                    let set = set.clone();
+                    std::thread::spawn(move || {
+                        let found = SubtitleUtils::find_subtitle_backups(&roots);
+                        set(BakCleanup::Found(found));
+                    });
+                }
+            }
+            BakCleanup::Searching | BakCleanup::Deleting => {
+                ui.label(RichText::new("Working…").color(ff::WARN));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+            }
+            BakCleanup::Found(files) if files.is_empty() => {
+                ui.label(RichText::new("No subtitle backups found.").color(ff::GOOD));
+                if ui.small_button("OK").clicked() {
+                    set(BakCleanup::Idle);
+                }
+            }
+            BakCleanup::Found(files) => {
+                ui.label(RichText::new(format!("Found {} subtitle backup file(s).", files.len())).color(ff::WARN));
+                if ui
+                    .button(RichText::new(format!("Delete {} files", files.len())).strong())
+                    .on_hover_text("Only *.srt/.ass/.ssa/.sub/.vtt .bak copies are deleted; your current subtitles stay")
+                    .clicked()
+                {
+                    set(BakCleanup::Deleting);
+                    let set = set.clone();
+                    std::thread::spawn(move || {
+                        let mut deleted = 0;
+                        let mut failed = 0;
+                        for file in files {
+                            if SubtitleUtils::is_subtitle_backup(&file) && std::fs::remove_file(&file).is_ok() {
+                                deleted += 1;
+                            } else {
+                                failed += 1;
+                            }
+                        }
+                        info!("Deleted {} subtitle backup file(s), {} failed", deleted, failed);
+                        set(BakCleanup::Done { deleted, failed });
+                    });
+                }
+                if ui.small_button("Cancel").clicked() {
+                    set(BakCleanup::Idle);
+                }
+            }
+            BakCleanup::Done { deleted, failed } => {
+                let text = if failed > 0 {
+                    format!("Deleted {deleted} file(s); {failed} couldn't be deleted.")
+                } else {
+                    format!("Deleted {deleted} file(s).")
+                };
+                ui.label(RichText::new(text).color(ff::GOOD));
+                if ui.small_button("OK").clicked() {
+                    set(BakCleanup::Idle);
+                }
+            }
         });
     }
 

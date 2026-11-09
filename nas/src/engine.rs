@@ -66,6 +66,7 @@ pub struct Shared {
     pub running: AtomicUsize,
     pub scanning: AtomicUsize,
     pub started: Instant,
+    pub cleanup: Mutex<Cleanup>,
     history: Mutex<HashMap<String, Record>>,
     history_path: PathBuf,
     cancel: AtomicBool,
@@ -97,11 +98,99 @@ impl Shared {
         Ok(())
     }
 
+    /// Start searching the watched folders for subtitle .bak files.
+    pub fn find_backups(self: &Arc<Self>) {
+        let mut state = self.cleanup.lock().unwrap_or_else(|e| e.into_inner());
+        if matches!(*state, Cleanup::Searching | Cleanup::Deleting) {
+            return;
+        }
+        *state = Cleanup::Searching;
+        drop(state);
+        let shared = Arc::clone(self);
+        let folders = self.config.read().unwrap_or_else(|e| e.into_inner()).folders.clone();
+        std::thread::spawn(move || {
+            let mut found = Vec::new();
+            for folder in folders {
+                let mut stack = vec![PathBuf::from(folder)];
+                while let Some(dir) = stack.pop() {
+                    let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+                    for entry in entries.flatten() {
+                        let Ok(kind) = entry.file_type() else { continue };
+                        let path = entry.path();
+                        if kind.is_dir() {
+                            let name = entry.file_name();
+                            if !is_system_folder(&name.to_string_lossy()) {
+                                stack.push(path);
+                            }
+                        } else if kind.is_file() && SubtitleUtils::is_subtitle_backup(&path) {
+                            found.push(path);
+                        }
+                    }
+                }
+            }
+            info!("Found {} subtitle backup file(s)", found.len());
+            *shared.cleanup.lock().unwrap_or_else(|e| e.into_inner()) = Cleanup::Found(found);
+        });
+    }
+
+    /// Delete the backups found by `find_backups`.
+    pub fn delete_backups(self: &Arc<Self>) {
+        let mut state = self.cleanup.lock().unwrap_or_else(|e| e.into_inner());
+        let Cleanup::Found(files) = std::mem::replace(&mut *state, Cleanup::Deleting) else {
+            return;
+        };
+        drop(state);
+        let shared = Arc::clone(self);
+        std::thread::spawn(move || {
+            let (mut deleted, mut failed) = (0, 0);
+            for file in files {
+                if SubtitleUtils::is_subtitle_backup(&file) && std::fs::remove_file(&file).is_ok() {
+                    deleted += 1;
+                } else {
+                    failed += 1;
+                }
+            }
+            info!("Deleted {deleted} subtitle backup file(s); {failed} couldn't be deleted");
+            *shared.cleanup.lock().unwrap_or_else(|e| e.into_inner()) = Cleanup::Done { deleted, failed };
+        });
+    }
+
+    pub fn reset_cleanup(&self) {
+        let mut state = self.cleanup.lock().unwrap_or_else(|e| e.into_inner());
+        if !matches!(*state, Cleanup::Searching | Cleanup::Deleting) {
+            *state = Cleanup::Idle;
+        }
+    }
+
     pub fn clear_finished_jobs(&self) {
         self.jobs
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .retain(|j| j.status == "queued" || j.status == "running");
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub enum Cleanup {
+    #[default]
+    Idle,
+    Searching,
+    Found(Vec<PathBuf>),
+    Deleting,
+    Done { deleted: usize, failed: usize },
+}
+
+impl Cleanup {
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            Cleanup::Idle => serde_json::json!({ "state": "idle" }),
+            Cleanup::Searching => serde_json::json!({ "state": "searching" }),
+            Cleanup::Found(files) => serde_json::json!({ "state": "found", "count": files.len() }),
+            Cleanup::Deleting => serde_json::json!({ "state": "deleting" }),
+            Cleanup::Done { deleted, failed } => {
+                serde_json::json!({ "state": "done", "deleted": deleted, "failed": failed })
+            }
+        }
     }
 }
 
@@ -195,6 +284,7 @@ pub fn start() -> Arc<Shared> {
         running: AtomicUsize::new(0),
         scanning: AtomicUsize::new(0),
         started: Instant::now(),
+        cleanup: Mutex::new(Cleanup::Idle),
         history: Mutex::new(history),
         history_path,
         cancel: AtomicBool::new(false),
@@ -796,6 +886,24 @@ impl Engine {
                 break;
             };
             self.queued.remove(&path);
+            // Never download over subtitles that are already there (they may
+            // have appeared while the video was waiting).
+            let has_subs = path.parent().is_some_and(|folder| {
+                !SubtitleUtils::video_missing_subtitle_in_listing(
+                    &path,
+                    &config.languages,
+                    config.exclude_hearing_impaired,
+                    &SubtitleUtils::list_subtitle_files_in_folder(folder),
+                )
+            });
+            if has_subs {
+                self.update_job(id, |j| {
+                    j.status = "skipped".into();
+                    j.message = "Already has subtitles".into();
+                });
+                self.remember(&path, true);
+                continue;
+            }
             if !path.exists() {
                 self.update_job(id, |j| {
                     j.status = "failed".into();
@@ -847,7 +955,11 @@ impl Engine {
             j.message = message;
             j.time = crate::log::timestamp();
         });
-        if let Some((size, mtime)) = fingerprint(&path) {
+        self.remember(&path, found);
+    }
+
+    fn remember(&self, path: &Path, found: bool) {
+        if let Some((size, mtime)) = fingerprint(path) {
             let mut history = self.shared.history.lock().unwrap_or_else(|e| e.into_inner());
             history.insert(
                 path.to_string_lossy().into_owned(),

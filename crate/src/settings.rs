@@ -112,7 +112,7 @@ impl Default for Settings {
             selected_languages: default_selected_languages(),
             skip_scanned_media: true,
             force_download: true,
-            overwrite_existing: true,
+            overwrite_existing: false,
             concurrent_downloads: DEFAULT_CONCURRENT_DOWNLOADS,
             ignore_local_extras: true,
             providers: default_providers(),
@@ -141,6 +141,8 @@ impl Default for Settings {
 
 impl Settings {
     pub fn normalize(mut self) -> Self {
+        // Overwriting existing subtitles is no longer supported.
+        self.overwrite_existing = false;
         const PROVIDERS: &[&str] = &[
             "addic7ed",
             "gestdown",
@@ -291,7 +293,7 @@ mod tests {
         assert_eq!(settings.selected_languages, vec!["en"]);
         assert!(settings.skip_scanned_media);
         assert!(settings.force_download);
-        assert!(settings.overwrite_existing);
+        assert!(!settings.overwrite_existing);
         assert!(settings.ignore_local_extras);
         assert_eq!(settings.providers.len(), 7);
         assert_eq!(settings.refiners, vec!["hash", "metadata", "tmdb", "tvdb"]);

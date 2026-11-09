@@ -153,7 +153,19 @@ pub struct SubtitleDownloader {
     pub apply_in_progress: Arc<std::sync::atomic::AtomicBool>,
     pub settings_applied_at: Option<std::time::Instant>,
     pub menu_page: MenuPage,
+    pub bak_cleanup: Arc<Mutex<BakCleanup>>,
     pub app_started: std::time::Instant,
+}
+
+/// Finding/deleting old subtitle .bak files.
+#[derive(Clone, Debug, Default)]
+pub enum BakCleanup {
+    #[default]
+    Idle,
+    Searching,
+    Found(Vec<PathBuf>),
+    Deleting,
+    Done { deleted: usize, failed: usize },
 }
 
 /// Page selected in the command menu.
