@@ -13,7 +13,7 @@ use crate::helper_functions::{Utils, Validation};
 use crate::info;
 use crate::subtitle_utils::SubtitleUtils;
 
-const MENU: &[(MenuPage, &str)] = &[
+pub(crate) const MENU: &[(MenuPage, &str)] = &[
     (MenuPage::Watch, "Watch"),
     (MenuPage::Scan, "Scan"),
     (MenuPage::Downloads, "Downloads"),
@@ -90,7 +90,7 @@ impl SubtitleDownloader {
         ff::window_at(ui, bar, "ff_status", |ui| {
             ui.add_space(-4.0);
             ui.horizontal_centered(|ui| {
-                ff::title(ui, &self.status_line(), 16.0, TEXT);
+                ff::title(ui, &self.status_line(), 16.0, TEXT());
             });
         });
 
@@ -101,8 +101,13 @@ impl SubtitleDownloader {
 
         self.render_update_prompt(ui.ctx());
 
-        ff::window_at(ui, main, "ff_main", |ui| {
-            if !deps_ready {
+        ff::window_at(ui, main, "ff_main", |ui| self.render_page_body(ui));
+    }
+
+    /// The current page's contents; shared by both themes' layouts.
+    pub(crate) fn render_page_body(&mut self, ui: &mut egui::Ui) {
+        {
+            if !self.dependencies_ready() {
                 self.render_config_page(ui);
                 return;
             }
@@ -130,7 +135,7 @@ impl SubtitleDownloader {
                 MenuPage::Config => self.render_config_page(ui),
                 MenuPage::Log => self.render_log_page(ui),
             }
-        });
+        }
     }
 
     /// Menu-style "Subtitles found" pop-ups in the top-right of the main window.
@@ -159,9 +164,9 @@ impl SubtitleDownloader {
                     ui.set_max_width(340.0);
                     ff::window(ui, |ui| {
                         ui.set_width(300.0);
-                        ff::title(ui, &item.toast.title, 15.0, LABEL);
+                        ff::title(ui, &item.toast.title, 15.0, LABEL());
                         ui.add(
-                            egui::Label::new(RichText::new(&item.toast.body).color(TEXT).strong())
+                            egui::Label::new(RichText::new(&item.toast.body).color(TEXT()).strong())
                                 .wrap(),
                         );
                     })
@@ -173,7 +178,7 @@ impl SubtitleDownloader {
         }
     }
 
-    fn status_line(&self) -> String {
+    pub(crate) fn status_line(&self) -> String {
         let shared = &self.watch.shared;
         if self.downloading || self.scanning {
             return self.status.clone();
@@ -211,12 +216,12 @@ impl SubtitleDownloader {
         let mut changed = false;
 
         ui.horizontal(|ui| {
-            ff::title(ui, "Watch", 26.0, TEXT);
+            ff::title(ui, "Watch", 26.0, TEXT());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let (label, color) = if self.watch_enabled {
-                    ("WATCHING: ON", ff::GOOD)
+                    ("WATCHING: ON", ff::GOOD())
                 } else {
-                    ("WATCHING: OFF", ff::BAD)
+                    ("WATCHING: OFF", ff::BAD())
                 };
                 if ui
                     .add(egui::Button::new(
@@ -232,7 +237,7 @@ impl SubtitleDownloader {
         });
         ui.label(
             RichText::new("New videos landing in these folders get subtitles automatically.")
-                .color(TEXT_DIM),
+                .color(TEXT_DIM()),
         );
         ff::divider(ui);
 
@@ -250,10 +255,10 @@ impl SubtitleDownloader {
                 if self.watch_folders.is_empty() {
                     ui.add_space(30.0);
                     ui.vertical_centered(|ui| {
-                        ff::title(ui, "No folders yet", 20.0, TEXT_DIM);
+                        ff::title(ui, "No folders yet", 20.0, TEXT_DIM());
                         ui.label(
                             RichText::new("Add your Movies or TV folder to start watching.")
-                                .color(TEXT_DIM),
+                                .color(TEXT_DIM()),
                         );
                     });
                 }
@@ -271,11 +276,11 @@ impl SubtitleDownloader {
                         .map(|c| c.to_uppercase().collect())
                         .unwrap_or_default();
                     let (status, status_color) = if !exists || failed {
-                        ("OFFLINE", ff::BAD)
+                        ("OFFLINE", ff::BAD())
                     } else if !self.watch_enabled {
-                        ("PAUSED", ff::WARN)
+                        ("PAUSED", ff::WARN())
                     } else {
-                        ("WATCHING", ff::GOOD)
+                        ("WATCHING", ff::GOOD())
                     };
                     let stats = shared.stats_for(path);
 
@@ -285,7 +290,7 @@ impl SubtitleDownloader {
                         ui.add_space(10.0);
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
-                                ff::title(ui, &name, 21.0, TEXT);
+                                ff::title(ui, &name, 21.0, TEXT());
                                 ui.add_space(12.0);
                                 ff::title(ui, status, 14.0, status_color);
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -301,7 +306,7 @@ impl SubtitleDownloader {
                                     }
                                 });
                             });
-                            ui.label(RichText::new(folder).color(TEXT_DIM).size(12.0));
+                            ui.label(RichText::new(folder).color(TEXT_DIM()).size(12.0));
                             ui.horizontal(|ui| {
                                 ff::stat_label(ui, "SUBS");
                                 let fraction = match stats {
@@ -400,7 +405,7 @@ impl SubtitleDownloader {
         self.update_cached_jobs();
         let jobs = self.get_cached_jobs().clone();
         if jobs.is_empty() {
-            ui.label(RichText::new("Pick a folder to scan. Results appear here.").color(TEXT_DIM));
+            ui.label(RichText::new("Pick a folder to scan. Results appear here.").color(TEXT_DIM()));
         } else {
             let root = std::path::PathBuf::from(&self.folder_path);
             render_jobs_table(ui, &jobs, &[root], "scan_jobs");
@@ -410,7 +415,7 @@ impl SubtitleDownloader {
     fn render_downloads_page(&mut self, ui: &mut egui::Ui) {
         let running = self.watch.shared.batch_running.load(Ordering::SeqCst);
         ui.horizontal(|ui| {
-            ff::title(ui, "Downloads", 26.0, TEXT);
+            ff::title(ui, "Downloads", 26.0, TEXT());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if running {
                     if ui.button("Cancel").clicked() {
@@ -425,7 +430,7 @@ impl SubtitleDownloader {
             RichText::new(
                 "Subtitles fetched for videos that arrived in watched folders (newest first).",
             )
-            .color(TEXT_DIM),
+            .color(TEXT_DIM()),
         );
         ff::divider(ui);
         let jobs: Vec<DownloadJob> = self
@@ -436,7 +441,7 @@ impl SubtitleDownloader {
             .rev()
             .collect();
         if jobs.is_empty() {
-            ui.label(RichText::new("Nothing yet. New arrivals will show up here.").color(TEXT_DIM));
+            ui.label(RichText::new("Nothing yet. New arrivals will show up here.").color(TEXT_DIM()));
         } else {
             let roots: Vec<std::path::PathBuf> = self
                 .watch_folders
@@ -449,7 +454,7 @@ impl SubtitleDownloader {
 
     fn render_config_page(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ff::title(ui, "Config", 26.0, TEXT);
+            ff::title(ui, "Config", 26.0, TEXT());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let applying = self.apply_in_progress.load(Ordering::SeqCst);
                 if ui
@@ -463,11 +468,11 @@ impl SubtitleDownloader {
                     self.save_and_apply();
                 }
                 if applying {
-                    ui.label(RichText::new("Applying…").color(ff::WARN));
+                    ui.label(RichText::new("Applying…").color(ff::WARN()));
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
                 } else if let Some(at) = self.settings_applied_at {
                     if at.elapsed().as_secs_f32() < 4.0 {
-                        ui.label(RichText::new("Saved and applied").color(ff::GOOD));
+                        ui.label(RichText::new("Saved and applied").color(ff::GOOD()));
                         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
                     }
                 }
@@ -475,10 +480,36 @@ impl SubtitleDownloader {
         });
         ui.label(
             RichText::new("Dependencies, performance, background mode and notifications")
-                .color(TEXT_DIM),
+                .color(TEXT_DIM()),
         );
         ff::divider(ui);
         egui::ScrollArea::vertical().id_salt("config_scroll").show(ui, |ui| {
+            ff::stat_label(ui, "THEME");
+            ui.horizontal(|ui| {
+                ui.label("Look");
+                for theme in [ff::Theme::FfMenu, ff::Theme::GreenDash] {
+                    let selected = self.theme == theme;
+                    let text = if selected {
+                        RichText::new(theme.label()).strong().color(ff::pal().on_accent)
+                    } else {
+                        RichText::new(theme.label())
+                    };
+                    let mut button = egui::Button::new(text);
+                    if selected {
+                        button = button.fill(ff::pal().accent);
+                    }
+                    if ui.add(button).on_hover_text("Switch the whole app's look. Takes effect right away.").clicked() && !selected {
+                        self.theme = theme;
+                        ff::set_theme(theme);
+                        ff::apply_style(ui.ctx());
+                        // Land on this page in the new layout too.
+                        self.green_in_page = true;
+                        self.menu_touched = true;
+                        self.save_current_settings();
+                    }
+                }
+            });
+            ff::divider(ui);
             ff::stat_label(ui, "DEPENDENCIES");
             self.render_python_status(ui);
             self.render_pipx_status(ui);
@@ -539,7 +570,7 @@ impl SubtitleDownloader {
             self.render_updates_section(ui);
             ff::divider(ui);
             ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Jenova v{} ·", crate::config::APP_VERSION)).color(TEXT_DIM));
+                ui.label(RichText::new(format!("Jenova v{} ·", crate::config::APP_VERSION)).color(TEXT_DIM()));
                 ui.hyperlink_to("AnimaTheAeon/Jenova", "https://github.com/AnimaTheAeon/Jenova");
             });
         });
@@ -574,7 +605,7 @@ impl SubtitleDownloader {
         };
         ui.horizontal_wrapped(|ui| match state {
             BakCleanup::Idle => {
-                ui.label(RichText::new("Older versions saved copies like Movie.en.srt.bak next to your subtitles.").color(TEXT_DIM));
+                ui.label(RichText::new("Older versions saved copies like Movie.en.srt.bak next to your subtitles.").color(TEXT_DIM()));
                 if ui
                     .add_enabled(!roots.is_empty(), egui::Button::new("Find .bak files"))
                     .on_hover_text("Searches your watched folders and the last scanned folder")
@@ -589,17 +620,17 @@ impl SubtitleDownloader {
                 }
             }
             BakCleanup::Searching | BakCleanup::Deleting => {
-                ui.label(RichText::new("Working…").color(ff::WARN));
+                ui.label(RichText::new("Working…").color(ff::WARN()));
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
             }
             BakCleanup::Found(files) if files.is_empty() => {
-                ui.label(RichText::new("No subtitle backups found.").color(ff::GOOD));
+                ui.label(RichText::new("No subtitle backups found.").color(ff::GOOD()));
                 if ui.small_button("OK").clicked() {
                     set(BakCleanup::Idle);
                 }
             }
             BakCleanup::Found(files) => {
-                ui.label(RichText::new(format!("Found {} subtitle backup file(s).", files.len())).color(ff::WARN));
+                ui.label(RichText::new(format!("Found {} subtitle backup file(s).", files.len())).color(ff::WARN()));
                 if ui
                     .button(RichText::new(format!("Delete {} files", files.len())).strong())
                     .on_hover_text("Only *.srt/.ass/.ssa/.sub/.vtt .bak copies are deleted; your current subtitles stay")
@@ -631,7 +662,7 @@ impl SubtitleDownloader {
                 } else {
                     format!("Deleted {deleted} file(s).")
                 };
-                ui.label(RichText::new(text).color(ff::GOOD));
+                ui.label(RichText::new(text).color(ff::GOOD()));
                 if ui.small_button("OK").clicked() {
                     set(BakCleanup::Idle);
                 }
@@ -670,19 +701,19 @@ impl SubtitleDownloader {
             let (text, color) = match &state {
                 UpdateState::Idle => (
                     format!("You have v{}", crate::config::APP_VERSION),
-                    TEXT_DIM,
+                    TEXT_DIM(),
                 ),
-                UpdateState::Checking => ("Checking GitHub…".to_string(), ff::WARN),
+                UpdateState::Checking => ("Checking GitHub…".to_string(), ff::WARN()),
                 UpdateState::UpToDate => (
                     format!("You're up to date (v{})", crate::config::APP_VERSION),
-                    ff::GOOD,
+                    ff::GOOD(),
                 ),
                 UpdateState::Available(release) => {
-                    (format!("v{} is available", release.version), ff::WARN)
+                    (format!("v{} is available", release.version), ff::WARN())
                 }
-                UpdateState::Downloading { .. } => ("Downloading update…".to_string(), ff::WARN),
-                UpdateState::Installed => ("Restarting…".to_string(), ff::GOOD),
-                UpdateState::Failed(error) => (error.clone(), ff::BAD),
+                UpdateState::Downloading { .. } => ("Downloading update…".to_string(), ff::WARN()),
+                UpdateState::Installed => ("Restarting…".to_string(), ff::GOOD()),
+                UpdateState::Failed(error) => (error.clone(), ff::BAD()),
             };
             ui.label(RichText::new(text).color(color));
             if let UpdateState::Available(_) = state {
@@ -700,7 +731,7 @@ impl SubtitleDownloader {
     }
 
     /// "Update available" Yes/No prompt and download progress.
-    fn render_update_prompt(&mut self, ctx: &egui::Context) {
+    pub(crate) fn render_update_prompt(&mut self, ctx: &egui::Context) {
         use crate::updater::UpdateState;
         use std::sync::atomic::Ordering::SeqCst;
         let state = self.updater.state();
@@ -722,7 +753,7 @@ impl SubtitleDownloader {
                     ui.set_width(440.0);
                     match &state {
                         UpdateState::Available(release) => {
-                            ff::title(ui, "Update available", 24.0, TEXT);
+                            ff::title(ui, "Update available", 24.0, TEXT());
                             ff::divider(ui);
                             ui.horizontal(|ui| {
                                 ff::stat_label(ui, "CURRENT");
@@ -735,7 +766,7 @@ impl SubtitleDownloader {
                                 ui.label(
                                     RichText::new(format!("v{}", release.version))
                                         .strong()
-                                        .color(ff::GOOD),
+                                        .color(ff::GOOD()),
                                 );
                             });
                             if !release.notes.trim().is_empty() {
@@ -746,7 +777,7 @@ impl SubtitleDownloader {
                                     .show(ui, |ui| {
                                         ui.label(
                                             RichText::new(release.notes.trim())
-                                                .color(TEXT_DIM)
+                                                .color(TEXT_DIM())
                                                 .size(13.0),
                                         );
                                     });
@@ -755,7 +786,7 @@ impl SubtitleDownloader {
                             if release.asset.is_none() {
                                 ui.label(
                                     RichText::new("This release has no Windows download attached.")
-                                        .color(ff::WARN),
+                                        .color(ff::WARN()),
                                 );
                             }
                             ui.label("Update now? Jenova will restart.");
@@ -794,7 +825,7 @@ impl SubtitleDownloader {
                             });
                         }
                         UpdateState::Downloading { release } => {
-                            ff::title(ui, &format!("Updating to v{}", release.version), 22.0, TEXT);
+                            ff::title(ui, &format!("Updating to v{}", release.version), 22.0, TEXT());
                             ff::divider(ui);
                             let done = self.updater.downloaded.load(SeqCst) as f32;
                             let total = self.updater.total.load(SeqCst).max(1) as f32;
@@ -819,13 +850,13 @@ impl SubtitleDownloader {
                             ctx.request_repaint_after(std::time::Duration::from_millis(100));
                         }
                         UpdateState::Installed => {
-                            ff::title(ui, "Update installed", 22.0, TEXT);
+                            ff::title(ui, "Update installed", 22.0, TEXT());
                             ui.label("Restarting Jenova…");
                         }
                         UpdateState::Failed(error) => {
-                            ff::title(ui, "Update failed", 22.0, ff::BAD);
+                            ff::title(ui, "Update failed", 22.0, ff::BAD());
                             ff::divider(ui);
-                            ui.label(RichText::new(error).color(TEXT));
+                            ui.label(RichText::new(error).color(TEXT()));
                             ui.add_space(6.0);
                             if ui.button("Close").clicked() {
                                 close = true;
@@ -846,7 +877,7 @@ impl SubtitleDownloader {
         if !crate::background::startup::supported() {
             ui.label(
                 RichText::new("Running in the background isn't available on this system yet.")
-                    .color(TEXT_DIM),
+                    .color(TEXT_DIM()),
             );
             return;
         }
@@ -871,12 +902,12 @@ impl SubtitleDownloader {
         let (text, color) = match (self.background_service, running, registered) {
             (true, true, true) => (
                 "Background watcher is running. It pauses while this window is open and takes over when you close it.",
-                ff::GOOD,
+                ff::GOOD(),
             ),
-            (true, false, _) => ("Background watcher is starting…", ff::WARN),
-            (true, true, false) => ("Running, but the startup entry is missing. Toggle off and on to fix.", ff::WARN),
-            (false, true, _) => ("Stopping background watcher…", ff::WARN),
-            (false, false, _) => ("Off. Folders are only watched while this window is open.", TEXT_DIM),
+            (true, false, _) => ("Background watcher is starting…", ff::WARN()),
+            (true, true, false) => ("Running, but the startup entry is missing. Toggle off and on to fix.", ff::WARN()),
+            (false, true, _) => ("Stopping background watcher…", ff::WARN()),
+            (false, false, _) => ("Off. Folders are only watched while this window is open.", TEXT_DIM()),
         };
         ui.label(RichText::new(text).color(color).size(13.0));
         if self.background_service {
@@ -894,12 +925,12 @@ impl SubtitleDownloader {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 if lines.is_empty() {
-                    ui.label(RichText::new("No activity yet.").color(TEXT_DIM));
+                    ui.label(RichText::new("No activity yet.").color(TEXT_DIM()));
                 }
                 for line in lines {
                     let (time, rest) = line.split_once("  ").unwrap_or(("", &line));
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(time).color(LABEL).monospace());
+                        ui.label(RichText::new(time).color(LABEL()).monospace());
                         ui.label(RichText::new(rest).monospace());
                     });
                 }
@@ -908,21 +939,21 @@ impl SubtitleDownloader {
 }
 
 fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
-    ff::title(ui, title, 26.0, TEXT);
-    ui.label(RichText::new(subtitle).color(TEXT_DIM));
+    ff::title(ui, title, 26.0, TEXT());
+    ui.label(RichText::new(subtitle).color(TEXT_DIM()));
     ff::divider(ui);
 }
 
 fn info_row(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ff::title(ui, label, 18.0, LABEL);
+        ff::title(ui, label, 18.0, LABEL());
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ff::title(ui, value, 18.0, TEXT);
+            ff::title(ui, value, 18.0, TEXT());
         });
     });
 }
 
-fn format_count(n: usize) -> String {
+pub(crate) fn format_count(n: usize) -> String {
     let s = n.to_string();
     let mut out = String::new();
     for (i, c) in s.chars().enumerate() {

@@ -5,6 +5,7 @@ pub mod background;
 pub mod config;
 pub mod data_structures;
 pub mod ff_layout;
+pub mod green_layout;
 pub mod ff_theme;
 pub mod gui;
 pub mod helper_functions;
