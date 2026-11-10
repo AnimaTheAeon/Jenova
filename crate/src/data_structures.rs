@@ -156,6 +156,12 @@ pub struct SubtitleDownloader {
     pub green_in_page: bool,
     /// Green dashboard: highlighted menu entry on the home screen.
     pub green_cursor: usize,
+    /// Green dashboard transitions: zooming into the orb to open a page,
+    /// the page coming out of the glow, and both reversed on BACK.
+    pub green_zoom: Option<(MenuPage, std::time::Instant)>,
+    pub green_reveal: Option<std::time::Instant>,
+    pub green_leave: Option<std::time::Instant>,
+    pub green_unzoom: Option<std::time::Instant>,
     pub apply_in_progress: Arc<std::sync::atomic::AtomicBool>,
     pub settings_applied_at: Option<std::time::Instant>,
     pub menu_page: MenuPage,
