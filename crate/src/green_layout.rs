@@ -198,6 +198,15 @@ impl SubtitleDownloader {
         self.set_keep_dropdown_open(page == MenuPage::Language);
     }
 
+    /// Back to the dashboard, with the cursor on the page just left.
+    fn green_back(&mut self) {
+        self.green_in_page = false;
+        self.set_keep_dropdown_open(false);
+        if let Some(i) = MENU.iter().position(|(p, _)| *p == self.menu_page) {
+            self.green_cursor = i;
+        }
+    }
+
     fn green_status(&self) -> (String, String) {
         let secs = self.app_started.elapsed().as_secs();
         let subs = self.scan_history.lock().map(|h| h.records.len()).unwrap_or(0);
@@ -293,8 +302,13 @@ impl SubtitleDownloader {
     }
 
     fn green_page(&mut self, ui: &mut egui::Ui, full: Rect, deps_ready: bool) {
-        if deps_ready && ui.input(|i| i.key_pressed(Key::Escape)) {
-            self.green_in_page = false;
+        // Esc (or the mouse's side "back" button) returns to the dashboard.
+        // While typing, Esc just leaves the text box (egui handles that).
+        let typing = ui.ctx().egui_wants_keyboard_input();
+        let esc = !typing && ui.input(|i| i.key_pressed(Key::Escape));
+        let mouse_back = ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1));
+        if deps_ready && (esc || mouse_back) {
+            self.green_back();
         }
         let label = MENU.iter().find(|(p, _)| *p == self.menu_page).map(|(_, l)| *l).unwrap_or("Config");
 
@@ -326,7 +340,7 @@ impl SubtitleDownloader {
         ff::set_hide_headings(false);
 
         if deps_ready && hint(ui, pos2(full.right() - 190.0, full.bottom() - 30.0), "ESC", "BACK").clicked() {
-            self.green_in_page = false;
+            self.green_back();
         }
     }
 }
