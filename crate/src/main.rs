@@ -6,6 +6,7 @@ mod background;
 mod config;
 mod data_structures;
 mod ff_layout;
+mod green_layout;
 mod ff_theme;
 mod gui;
 mod helper_functions;
@@ -197,6 +198,8 @@ fn configure_window(icon_data: Option<egui::IconData>) -> eframe::NativeOptions 
 
 /// Apply the theme.
 fn configure_visuals(ctx: &egui::Context) {
+    let saved = crate::settings::Settings::load();
+    ff_theme::set_theme(ff_theme::Theme::from_key(&saved.theme));
     ff_theme::apply_style(ctx);
 }
 
@@ -223,6 +226,17 @@ fn configure_fonts(ctx: &egui::Context) {
     if let Some(monospace) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
         monospace.push("Inter".to_owned());
     }
+    // Blocky display face for the green dashboard theme's headings and tabs.
+    fonts.font_data.insert(
+        "Orbitron".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../resources/fonts/Orbitron-800.ttf"
+        ))),
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name("display".into()),
+        vec!["Orbitron".to_owned(), "Nunito".to_owned(), "Inter".to_owned()],
+    );
     ctx.set_fonts(fonts);
 }
 

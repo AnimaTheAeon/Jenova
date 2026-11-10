@@ -557,6 +557,9 @@ impl Default for SubtitleDownloader {
             background_checked: false,
             updater: Arc::new(crate::updater::Updater::default()),
             check_updates: settings.check_updates,
+            theme: crate::ff_theme::Theme::from_key(&settings.theme),
+            green_in_page: false,
+            green_cursor: 0,
             apply_in_progress: Arc::new(AtomicBool::new(false)),
             settings_applied_at: None,
             menu_page: MenuPage::Watch,
@@ -596,6 +599,7 @@ impl SubtitleDownloader {
             notify_in_app: self.notify_in_app,
             background_service: self.background_service,
             check_updates: self.check_updates,
+            theme: self.theme.key().to_string(),
         }
     }
 

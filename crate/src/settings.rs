@@ -59,6 +59,13 @@ pub struct Settings {
     pub background_service: bool,
     #[serde(default = "default_true")]
     pub check_updates: bool,
+    /// "ff" (FFVII menu) or "green" (green dashboard).
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String {
+    "ff".to_string()
 }
 
 fn default_settle_seconds() -> u64 {
@@ -135,6 +142,7 @@ impl Default for Settings {
             notify_in_app: true,
             background_service: false,
             check_updates: true,
+            theme: default_theme(),
         }
     }
 }

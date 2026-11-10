@@ -150,6 +150,12 @@ pub struct SubtitleDownloader {
     pub background_checked: bool,
     pub updater: Arc<crate::updater::Updater>,
     pub check_updates: bool,
+    /// Current look (FFVII menu or green dashboard).
+    pub theme: crate::ff_theme::Theme,
+    /// Green dashboard: a page is open (false = the home screen with the orb).
+    pub green_in_page: bool,
+    /// Green dashboard: highlighted menu entry on the home screen.
+    pub green_cursor: usize,
     pub apply_in_progress: Arc<std::sync::atomic::AtomicBool>,
     pub settings_applied_at: Option<std::time::Instant>,
     pub menu_page: MenuPage,

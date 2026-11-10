@@ -146,7 +146,7 @@ impl SubtitleDownloader {
             egui::Align2::CENTER_CENTER,
             title,
             font,
-            with_alpha(ff::TEXT, fade_in),
+            with_alpha(ff::TEXT(), fade_in),
         );
 
         // Underline bar.
@@ -158,7 +158,7 @@ impl SubtitleDownloader {
         painter.rect_filled(
             bar,
             egui::CornerRadius::same(1),
-            with_alpha(ff::LABEL, fade_in),
+            with_alpha(ff::LABEL(), fade_in),
         );
 
         let status = if self.installing_python {
@@ -173,7 +173,7 @@ impl SubtitleDownloader {
             egui::Align2::CENTER_CENTER,
             status,
             egui::FontId::proportional(20.0),
-            with_alpha(ff::TEXT_DIM, sub_in),
+            with_alpha(ff::TEXT_DIM(), sub_in),
         );
     }
 
@@ -1218,7 +1218,7 @@ impl eframe::App for SubtitleDownloader {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(crate::ff_theme::BACKDROP)
+                    .fill(crate::ff_theme::BACKDROP())
                     .inner_margin(egui::Margin::same(14)),
             )
             .show(ui, |ui| {
@@ -1229,7 +1229,10 @@ impl eframe::App for SubtitleDownloader {
                     });
                     return;
                 }
-                self.render_ff_layout(ui);
+                match self.theme {
+                    crate::ff_theme::Theme::GreenDash => self.render_green_layout(ui),
+                    crate::ff_theme::Theme::FfMenu => self.render_ff_layout(ui),
+                }
             });
 
         if self.scanning {

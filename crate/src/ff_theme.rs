@@ -7,25 +7,161 @@ use eframe::egui::{
     Stroke, StrokeKind, Ui, UiBuilder, Vec2,
 };
 
+use std::sync::atomic::{AtomicU8, Ordering};
+
+/// Which look the app is drawn in. Saved in settings as "ff" or "green".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Theme {
+    /// Classic JRPG party menu (blue windows, pointing hand).
+    FfMenu,
+    /// Green console dashboard (glowing grid, jelly orb, slanted tabs).
+    GreenDash,
+}
+
+impl Theme {
+    pub fn from_key(key: &str) -> Self {
+        match key {
+            "green" => Theme::GreenDash,
+            _ => Theme::FfMenu,
+        }
+    }
+    pub fn key(self) -> &'static str {
+        match self {
+            Theme::FfMenu => "ff",
+            Theme::GreenDash => "green",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::FfMenu => "FFVII menu",
+            Theme::GreenDash => "Green dashboard",
+        }
+    }
+}
+
+static THEME: AtomicU8 = AtomicU8::new(0);
+static HIDE_HEADINGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// While set, page headings (titles 24px and up) are skipped: the green
+/// layout already shows the page name in its title bar.
+pub fn set_hide_headings(hide: bool) {
+    HIDE_HEADINGS.store(hide, Ordering::Relaxed);
+}
+
+pub fn set_theme(theme: Theme) {
+    THEME.store(theme as u8, Ordering::Relaxed);
+}
+
+pub fn theme() -> Theme {
+    if THEME.load(Ordering::Relaxed) == 1 { Theme::GreenDash } else { Theme::FfMenu }
+}
+
+pub fn is_green() -> bool {
+    theme() == Theme::GreenDash
+}
+
+/// Every color the widgets use, per theme.
+pub struct Palette {
+    pub win_tl: Color32,
+    pub win_tr: Color32,
+    pub win_bl: Color32,
+    pub win_br: Color32,
+    pub border_light: Color32,
+    pub border_mid: Color32,
+    pub border_dark: Color32,
+    pub text: Color32,
+    pub text_dim: Color32,
+    pub shadow: Color32,
+    pub label: Color32,
+    pub good: Color32,
+    pub warn: Color32,
+    pub bad: Color32,
+    pub backdrop: Color32,
+    /// Stat bar gradient (left to right) used by the green theme.
+    pub bar_from: Color32,
+    pub bar_to: Color32,
+    /// Highlight fill (selected tab / row) and the text drawn on it.
+    pub accent: Color32,
+    pub on_accent: Color32,
+}
+
+pub const FF_PALETTE: Palette = Palette {
+    win_tl: Color32::from_rgb(46, 86, 190),
+    win_tr: Color32::from_rgb(18, 30, 120),
+    win_bl: Color32::from_rgb(24, 40, 146),
+    win_br: Color32::from_rgb(6, 8, 58),
+    border_light: Color32::from_rgb(214, 216, 228),
+    border_mid: Color32::from_rgb(140, 144, 168),
+    border_dark: Color32::from_rgb(44, 46, 70),
+    text: Color32::from_rgb(244, 244, 248),
+    text_dim: Color32::from_rgb(170, 178, 214),
+    shadow: Color32::from_rgba_premultiplied(0, 0, 0, 200),
+    label: Color32::from_rgb(112, 204, 255),
+    good: Color32::from_rgb(120, 230, 140),
+    warn: Color32::from_rgb(255, 226, 96),
+    bad: Color32::from_rgb(255, 110, 110),
+    backdrop: Color32::from_rgb(4, 4, 12),
+    bar_from: Color32::from_rgb(30, 110, 230),
+    bar_to: Color32::from_rgb(140, 230, 255),
+    accent: Color32::from_rgb(64, 112, 210),
+    on_accent: Color32::WHITE,
+};
+
+pub const GREEN_PALETTE: Palette = Palette {
+    win_tl: Color32::from_rgba_premultiplied(26, 86, 12, 225),
+    win_tr: Color32::from_rgba_premultiplied(14, 60, 8, 225),
+    win_bl: Color32::from_rgba_premultiplied(10, 48, 6, 230),
+    win_br: Color32::from_rgba_premultiplied(3, 22, 3, 235),
+    border_light: Color32::from_rgb(160, 255, 80),
+    border_mid: Color32::from_rgb(80, 160, 40),
+    border_dark: Color32::from_rgb(8, 34, 6),
+    text: Color32::from_rgb(228, 255, 196),
+    text_dim: Color32::from_rgb(166, 220, 128),
+    shadow: Color32::from_rgba_premultiplied(0, 0, 0, 200),
+    label: Color32::from_rgb(200, 255, 74),
+    good: Color32::from_rgb(140, 255, 110),
+    warn: Color32::from_rgb(255, 225, 74),
+    bad: Color32::from_rgb(255, 122, 90),
+    backdrop: Color32::from_rgb(2, 12, 2),
+    bar_from: Color32::from_rgb(79, 181, 26),
+    bar_to: Color32::from_rgb(226, 255, 106),
+    accent: Color32::from_rgb(220, 255, 100),
+    on_accent: Color32::from_rgb(28, 53, 4),
+};
+
+pub fn pal() -> &'static Palette {
+    if is_green() { &GREEN_PALETTE } else { &FF_PALETTE }
+}
+
+macro_rules! palette_fns {
+    ($($name:ident => $field:ident),* $(,)?) => {
+        $(
+            #[allow(non_snake_case)]
+            #[inline]
+            pub fn $name() -> Color32 { pal().$field }
+        )*
+    };
+}
+palette_fns! {
+    WIN_TL => win_tl, WIN_TR => win_tr, WIN_BL => win_bl, WIN_BR => win_br,
+    BORDER_LIGHT => border_light, BORDER_MID => border_mid, BORDER_DARK => border_dark,
+    TEXT => text, TEXT_DIM => text_dim, SHADOW => shadow, LABEL => label,
+    GOOD => good, WARN => warn, BAD => bad, BACKDROP => backdrop,
+}
+
+/// The blocky display face used by the green theme for headings.
+pub fn display_font(size: f32) -> FontId {
+    if is_green() {
+        FontId::new(size, egui::FontFamily::Name("display".into()))
+    } else {
+        FontId::proportional(size)
+    }
+}
+
 /// Window gradient corners: top-left, top-right, bottom-left, bottom-right.
-pub const WIN_TL: Color32 = Color32::from_rgb(46, 86, 190);
-pub const WIN_TR: Color32 = Color32::from_rgb(18, 30, 120);
-pub const WIN_BL: Color32 = Color32::from_rgb(24, 40, 146);
-pub const WIN_BR: Color32 = Color32::from_rgb(6, 8, 58);
 
-pub const BORDER_LIGHT: Color32 = Color32::from_rgb(214, 216, 228);
-pub const BORDER_MID: Color32 = Color32::from_rgb(140, 144, 168);
-pub const BORDER_DARK: Color32 = Color32::from_rgb(44, 46, 70);
 
-pub const TEXT: Color32 = Color32::from_rgb(244, 244, 248);
-pub const TEXT_DIM: Color32 = Color32::from_rgb(170, 178, 214);
-pub const SHADOW: Color32 = Color32::from_rgba_premultiplied(0, 0, 0, 200);
 /// Stat labels ("LV", "HP", "Time").
-pub const LABEL: Color32 = Color32::from_rgb(112, 204, 255);
-pub const GOOD: Color32 = Color32::from_rgb(120, 230, 140);
-pub const WARN: Color32 = Color32::from_rgb(255, 226, 96);
-pub const BAD: Color32 = Color32::from_rgb(255, 110, 110);
-pub const BACKDROP: Color32 = Color32::from_rgb(4, 4, 12);
 
 pub const WINDOW_RADIUS: u8 = 7;
 pub const WINDOW_PADDING: i8 = 16;
@@ -34,34 +170,49 @@ pub const MENU_ITEM_HEIGHT: f32 = 32.0;
 /// Apply the global style.
 pub fn apply_style(ctx: &egui::Context) {
     let mut visuals = egui::Visuals::dark();
-    visuals.override_text_color = Some(TEXT);
-    visuals.panel_fill = BACKDROP;
-    visuals.window_fill = Color32::from_rgb(22, 34, 120);
-    visuals.window_stroke = Stroke::new(2.0, BORDER_LIGHT);
+    let g = is_green();
+    // (FF value, green value)
+    let pick = |ff: Color32, green: Color32| if g { green } else { ff };
+    visuals.override_text_color = Some(TEXT());
+    visuals.panel_fill = BACKDROP();
+    visuals.window_fill = pick(Color32::from_rgb(22, 34, 120), Color32::from_rgb(10, 40, 6));
+    visuals.window_stroke = Stroke::new(2.0, BORDER_LIGHT());
     visuals.window_corner_radius = CornerRadius::same(WINDOW_RADIUS);
-    visuals.extreme_bg_color = Color32::from_rgb(8, 12, 52);
-    visuals.faint_bg_color = Color32::from_rgba_premultiplied(18, 22, 40, 40);
-    visuals.code_bg_color = Color32::from_rgb(8, 12, 52);
-    visuals.hyperlink_color = LABEL;
-    visuals.warn_fg_color = WARN;
-    visuals.error_fg_color = BAD;
-    visuals.selection.bg_fill = Color32::from_rgb(64, 112, 210);
-    visuals.selection.stroke = Stroke::new(1.0, TEXT);
+    visuals.extreme_bg_color = pick(Color32::from_rgb(8, 12, 52), Color32::from_rgb(2, 16, 2));
+    visuals.faint_bg_color = pick(Color32::from_rgba_premultiplied(18, 22, 40, 40), Color32::from_rgba_premultiplied(10, 30, 6, 40));
+    visuals.code_bg_color = pick(Color32::from_rgb(8, 12, 52), Color32::from_rgb(2, 16, 2));
+    visuals.hyperlink_color = LABEL();
+    visuals.warn_fg_color = WARN();
+    visuals.error_fg_color = BAD();
+    visuals.selection.bg_fill = pick(Color32::from_rgb(64, 112, 210), Color32::from_rgb(70, 140, 24));
+    visuals.selection.stroke = Stroke::new(1.0, TEXT());
 
     let widget = |bg: Color32, stroke: Color32| egui::style::WidgetVisuals {
         bg_fill: bg,
         weak_bg_fill: bg,
         bg_stroke: Stroke::new(1.0, stroke),
         corner_radius: CornerRadius::same(4),
-        fg_stroke: Stroke::new(1.5, TEXT),
+        fg_stroke: Stroke::new(1.5, TEXT()),
         expansion: 0.0,
     };
-    visuals.widgets.noninteractive = widget(Color32::from_rgb(14, 20, 70), BORDER_MID);
-    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(90, 100, 160));
-    visuals.widgets.inactive = widget(Color32::from_rgb(16, 26, 92), BORDER_MID);
-    visuals.widgets.hovered = widget(Color32::from_rgb(44, 72, 170), BORDER_LIGHT);
-    visuals.widgets.active = widget(Color32::from_rgb(70, 108, 214), Color32::WHITE);
-    visuals.widgets.open = widget(Color32::from_rgb(36, 58, 150), BORDER_LIGHT);
+    visuals.widgets.noninteractive = widget(pick(Color32::from_rgb(14, 20, 70), Color32::from_rgb(6, 26, 4)), BORDER_MID());
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, pick(Color32::from_rgb(90, 100, 160), Color32::from_rgb(60, 120, 30)));
+    visuals.widgets.inactive = widget(pick(Color32::from_rgb(16, 26, 92), Color32::from_rgb(16, 60, 8)), BORDER_MID());
+    visuals.widgets.hovered = widget(pick(Color32::from_rgb(44, 72, 170), Color32::from_rgb(40, 110, 16)), BORDER_LIGHT());
+    visuals.widgets.active = widget(pick(Color32::from_rgb(70, 108, 214), Color32::from_rgb(150, 220, 40)), Color32::WHITE);
+    visuals.widgets.open = widget(pick(Color32::from_rgb(36, 58, 150), Color32::from_rgb(30, 90, 12)), BORDER_LIGHT());
+    if g {
+        // Slanted look: square corners on buttons and boxes.
+        for w in [
+            &mut visuals.widgets.noninteractive,
+            &mut visuals.widgets.inactive,
+            &mut visuals.widgets.hovered,
+            &mut visuals.widgets.active,
+            &mut visuals.widgets.open,
+        ] {
+            w.corner_radius = CornerRadius::same(1);
+        }
+    }
 
     ctx.set_theme(egui::Theme::Dark);
     ctx.set_visuals_of(egui::Theme::Dark, visuals);
@@ -98,8 +249,8 @@ fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
 fn window_color(rect: Rect, p: Pos2) -> Color32 {
     let u = ((p.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0);
     let v = ((p.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
-    let top = lerp_color(WIN_TL, WIN_TR, u);
-    let bottom = lerp_color(WIN_BL, WIN_BR, u);
+    let top = lerp_color(WIN_TL(), WIN_TR(), u);
+    let bottom = lerp_color(WIN_BL(), WIN_BR(), u);
     lerp_color(top, bottom, v)
 }
 
@@ -123,8 +274,56 @@ fn rounded_points(rect: Rect, r: f32) -> Vec<Pos2> {
     pts
 }
 
+/// Corner-cut outline: top-left and bottom-right corners clipped at `cut`.
+pub fn chamfer_points(rect: Rect, cut: f32) -> Vec<Pos2> {
+    let c = cut.min(rect.width() / 3.0).min(rect.height() / 3.0);
+    vec![
+        Pos2::new(rect.left() + c, rect.top()),
+        Pos2::new(rect.right(), rect.top()),
+        Pos2::new(rect.right(), rect.bottom() - c),
+        Pos2::new(rect.right() - c, rect.bottom()),
+        Pos2::new(rect.left(), rect.bottom()),
+        Pos2::new(rect.left(), rect.top() + c),
+    ]
+}
+
+/// Fills a convex outline with the window gradient.
+fn gradient_fill(rect: Rect, pts: &[Pos2]) -> Shape {
+    let mut mesh = egui::Mesh::default();
+    let center = rect.center();
+    mesh.colored_vertex(center, window_color(rect, center));
+    for p in pts {
+        mesh.colored_vertex(*p, window_color(rect, *p));
+    }
+    let n = pts.len() as u32;
+    for i in 0..n {
+        mesh.add_triangle(0, 1 + i, 1 + (i + 1) % n);
+    }
+    Shape::mesh(mesh)
+}
+
+/// Green theme window: translucent green glass with clipped corners.
+fn green_window_shapes(rect: Rect) -> Vec<Shape> {
+    let cut = 22.0;
+    let pts = chamfer_points(rect, cut);
+    let inner = chamfer_points(rect.shrink(5.0), cut - 3.0);
+    let glow = |w: f32, a: u8| {
+        Shape::closed_line(pts.clone(), Stroke::new(w, Color32::from_rgba_unmultiplied(150, 255, 60, a)))
+    };
+    vec![
+        glow(9.0, 18),
+        glow(5.0, 36),
+        gradient_fill(rect, &pts),
+        Shape::closed_line(pts.clone(), Stroke::new(2.0, BORDER_LIGHT().gamma_multiply(0.75))),
+        Shape::closed_line(inner, Stroke::new(1.0, Color32::from_rgba_unmultiplied(160, 255, 80, 40))),
+    ]
+}
+
 /// Shapes for a gradient window with a beveled border.
 pub fn window_shapes(rect: Rect) -> Vec<Shape> {
+    if is_green() {
+        return green_window_shapes(rect);
+    }
     let r = WINDOW_RADIUS as f32;
     let mut mesh = egui::Mesh::default();
     let center = rect.center();
@@ -149,19 +348,19 @@ pub fn window_shapes(rect: Rect) -> Vec<Shape> {
         Shape::rect_stroke(
             rect,
             radius,
-            Stroke::new(1.0, BORDER_DARK),
+            Stroke::new(1.0, BORDER_DARK()),
             StrokeKind::Outside,
         ),
         Shape::rect_stroke(
             rect,
             radius,
-            Stroke::new(3.0, BORDER_LIGHT),
+            Stroke::new(3.0, BORDER_LIGHT()),
             StrokeKind::Inside,
         ),
         Shape::rect_stroke(
             rect.shrink(3.0),
             CornerRadius::same(WINDOW_RADIUS.saturating_sub(3)),
-            Stroke::new(1.0, BORDER_MID),
+            Stroke::new(1.0, BORDER_MID()),
             StrokeKind::Inside,
         ),
     ]
@@ -207,13 +406,23 @@ pub fn shadow_text(
     color: Color32,
 ) -> Rect {
     let painter = ui.painter();
-    painter.text(pos + Vec2::new(1.5, 1.5), align, text, font.clone(), SHADOW);
+    painter.text(pos + Vec2::new(1.5, 1.5), align, text, font.clone(), SHADOW());
     painter.text(pos, align, text, font, color)
 }
 
 /// A shadowed text label that takes up layout space.
 pub fn title(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {
-    let font = FontId::proportional(size);
+    if size >= 24.0 && HIDE_HEADINGS.load(Ordering::Relaxed) {
+        return ui.allocate_response(Vec2::ZERO, Sense::hover());
+    }
+    // Green theme: big headings in the blocky display face, upper case.
+    let upper;
+    let (text, font) = if is_green() && size >= 19.0 {
+        upper = text.to_uppercase();
+        (upper.as_str(), display_font(size * 0.86))
+    } else {
+        (text, FontId::proportional(size))
+    };
     let galley = ui
         .painter()
         .layout_no_wrap(text.to_string(), font.clone(), color);
@@ -225,7 +434,15 @@ pub fn title(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {
 
 /// Small cyan stat label like "LV" or "HP".
 pub fn stat_label(ui: &mut Ui, text: &str) -> Response {
-    title(ui, text, 14.0, LABEL)
+    if is_green() {
+        let t = text.to_uppercase();
+        let font = display_font(11.5);
+        let galley = ui.painter().layout_no_wrap(t.clone(), font.clone(), LABEL());
+        let (rect, response) = ui.allocate_exact_size(galley.size() + Vec2::new(2.0, 2.0), Sense::hover());
+        shadow_text(ui, rect.min, egui::Align2::LEFT_TOP, &t, font, LABEL());
+        return response;
+    }
+    title(ui, text, 14.0, LABEL())
 }
 
 /// Pointing hand cursor; `tip` is where the index finger points.
@@ -299,7 +516,7 @@ pub fn menu_item(ui: &mut Ui, label: &str, selected: bool, enabled: bool) -> Res
     let color = if !enabled {
         Color32::from_rgb(110, 116, 150)
     } else if selected {
-        TEXT
+        TEXT()
     } else {
         Color32::from_rgb(214, 218, 236)
     };
@@ -343,9 +560,11 @@ pub fn stat_bar(ui: &mut Ui, fraction: f32, width: f32, from: Color32, to: Color
     painter.rect_filled(
         rect.expand(1.0),
         CornerRadius::same(2),
-        Color32::from_rgb(10, 10, 30),
+        if is_green() { Color32::from_rgb(0, 14, 0) } else { Color32::from_rgb(10, 10, 30) },
     );
     let fraction = fraction.clamp(0.0, 1.0);
+    // The green theme keeps every bar lime, whatever the caller asked for.
+    let (from, to) = if is_green() { (pal().bar_from, pal().bar_to) } else { (from, to) };
     if fraction > 0.0 {
         let fill = Rect::from_min_size(rect.min, Vec2::new(rect.width() * fraction, rect.height()));
         let mut mesh = egui::Mesh::default();
@@ -361,7 +580,7 @@ pub fn stat_bar(ui: &mut Ui, fraction: f32, width: f32, from: Color32, to: Color
     painter.rect_stroke(
         rect.expand(1.0),
         CornerRadius::same(2),
-        Stroke::new(1.0, BORDER_MID),
+        Stroke::new(1.0, BORDER_MID()),
         StrokeKind::Outside,
     );
     response
@@ -373,13 +592,29 @@ pub fn divider(ui: &mut Ui) {
     let y = rect.center().y;
     ui.painter().line_segment(
         [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)],
-        Stroke::new(1.0, Color32::from_rgba_premultiplied(150, 160, 220, 90)),
+        if is_green() {
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 255, 70, 50))
+        } else {
+            Stroke::new(1.0, Color32::from_rgba_premultiplied(150, 160, 220, 90))
+        },
     );
 }
 
 /// Square emblem with a letter, used as a folder "portrait".
 pub fn emblem(ui: &mut Ui, letter: &str, size: f32, active: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    if is_green() {
+        paint_orb(ui.painter(), rect.center(), size * 0.46, active, 0.0);
+        shadow_text(
+            ui,
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            &letter.to_uppercase(),
+            display_font(size * 0.38),
+            Color32::from_rgb(20, 50, 4),
+        );
+        return response;
+    }
     let painter = ui.painter();
     let (a, b) = if active {
         (
@@ -403,7 +638,7 @@ pub fn emblem(ui: &mut Ui, letter: &str, size: f32, active: bool) -> Response {
     painter.rect_stroke(
         rect,
         CornerRadius::same(3),
-        Stroke::new(2.0, BORDER_LIGHT),
+        Stroke::new(2.0, BORDER_LIGHT()),
         StrokeKind::Inside,
     );
     shadow_text(
@@ -412,7 +647,70 @@ pub fn emblem(ui: &mut Ui, letter: &str, size: f32, active: bool) -> Response {
         egui::Align2::CENTER_CENTER,
         letter,
         FontId::proportional(size * 0.55),
-        TEXT,
+        TEXT(),
     );
     response
+}
+
+/// Radial gradient disc made of rings, center color to edge color.
+pub fn radial_disc(painter: &egui::Painter, center: Pos2, radius: f32, stops: &[(f32, Color32)]) {
+    let segs = 48;
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(center, stops[0].1);
+    let mut prev_ring: Option<u32> = None;
+    for &(t, color) in stops.iter().skip(1) {
+        let base = mesh.vertices.len() as u32;
+        for i in 0..segs {
+            let a = i as f32 / segs as f32 * std::f32::consts::TAU;
+            mesh.colored_vertex(center + Vec2::new(a.cos(), a.sin()) * radius * t, color);
+        }
+        for i in 0..segs as u32 {
+            let j = (i + 1) % segs as u32;
+            match prev_ring {
+                None => mesh.add_triangle(0, base + i, base + j),
+                Some(p) => {
+                    mesh.add_triangle(p + i, base + i, base + j);
+                    mesh.add_triangle(p + i, base + j, p + j);
+                }
+            }
+        }
+        prev_ring = Some(base);
+    }
+    painter.add(Shape::mesh(mesh));
+}
+
+/// A glossy green orb (the green theme's "portrait" and status light).
+/// `wobble` (0..1 phase) gently squashes it for the big animated orb.
+pub fn paint_orb(painter: &egui::Painter, center: Pos2, r: f32, lit: bool, wobble: f32) {
+    let (core, mid, edge, rim) = if lit {
+        (
+            Color32::from_rgb(244, 255, 156),
+            Color32::from_rgb(158, 232, 44),
+            Color32::from_rgb(79, 181, 26),
+            Color32::from_rgb(28, 90, 10),
+        )
+    } else {
+        (
+            Color32::from_rgb(200, 214, 190),
+            Color32::from_rgb(110, 128, 98),
+            Color32::from_rgb(52, 66, 44),
+            Color32::from_rgb(24, 32, 20),
+        )
+    };
+    if lit {
+        radial_disc(painter, center, r * 1.5, &[
+            (0.0, Color32::from_rgba_unmultiplied(170, 255, 60, 70)),
+            (0.66, Color32::from_rgba_unmultiplied(170, 255, 60, 30)),
+            (1.0, Color32::TRANSPARENT),
+        ]);
+    }
+    let squash = 1.0 + 0.03 * (wobble * std::f32::consts::TAU).sin();
+    radial_disc(painter, center, r * squash, &[(0.0, core), (0.35, mid), (0.72, edge), (1.0, rim)]);
+    painter.circle_stroke(center, r, Stroke::new((r * 0.06).max(1.0), Color32::from_rgba_unmultiplied(20, 70, 6, 160)));
+    // Gloss highlight.
+    let g = center + Vec2::new(-r * 0.32, -r * 0.42);
+    radial_disc(painter, g, r * 0.32, &[
+        (0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 190)),
+        (1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 0)),
+    ]);
 }
