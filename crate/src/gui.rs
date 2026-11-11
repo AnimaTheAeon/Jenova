@@ -17,7 +17,6 @@ use rfd::FileDialog;
 
 /// Donation and dependency text color.
 const DEPS_YELLOW: egui::Color32 = egui::Color32::from_rgb(247, 233, 181);
-/// Header subtitle color.
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn render_dependency_command(ui: &mut egui::Ui, label: &str, command: &str) -> bool {
