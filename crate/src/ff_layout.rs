@@ -569,10 +569,7 @@ impl SubtitleDownloader {
             ff::divider(ui);
             self.render_updates_section(ui);
             ff::divider(ui);
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(format!("Jenova v{} ·", crate::config::APP_VERSION)).color(TEXT_DIM()));
-                ui.hyperlink_to("AnimaTheAeon/Jenova", "https://github.com/AnimaTheAeon/Jenova");
-            });
+            ui.label(RichText::new(format!("Jenova v{}", crate::config::APP_VERSION)).color(TEXT_DIM()));
         });
     }
 
@@ -816,11 +813,6 @@ impl SubtitleDownloader {
                                     .clicked()
                                 {
                                     self.updater.dismissed.store(true, SeqCst);
-                                }
-                                if !release.page_url.is_empty() {
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.hyperlink_to("Release page", &release.page_url);
-                                    });
                                 }
                             });
                         }
