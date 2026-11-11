@@ -18,7 +18,6 @@ use rfd::FileDialog;
 /// Donation and dependency text color.
 const DEPS_YELLOW: egui::Color32 = egui::Color32::from_rgb(247, 233, 181);
 /// Header subtitle color.
-const TITLE_SUBTITLE: egui::Color32 = egui::Color32::from_rgb(0xAC, 0x98, 0xC7);
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn render_dependency_command(ui: &mut egui::Ui, label: &str, command: &str) -> bool {
@@ -70,42 +69,6 @@ fn macos_install_command(package: &str, homebrew_installed: bool) -> String {
 }
 
 impl SubtitleDownloader {
-    /// Render the application header.
-    pub fn render_header(&self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let github_url = "https://github.com/AnimaTheAeon/Jenova";
-            let title_main = format!("Jenova v{} ", APP_VERSION);
-            let title_main_rich = egui::RichText::new(title_main)
-                .color(egui::Color32::from_rgb(147, 115, 192))
-                .size(17.0)
-                .monospace()
-                .strong();
-            let title_sub_rich = egui::RichText::new("Subtitle Downloader Tool")
-                .color(TITLE_SUBTITLE)
-                .size(17.0)
-                .monospace()
-                .strong();
-            let main_response = ui.add(
-                egui::Label::new(title_main_rich)
-                    .selectable(false)
-                    .sense(egui::Sense::click()),
-            );
-            let sub_response = ui.add(
-                egui::Label::new(title_sub_rich)
-                    .selectable(false)
-                    .sense(egui::Sense::click()),
-            );
-            if main_response.clicked() || sub_response.clicked() {
-                ui.ctx().open_url(egui::OpenUrl::new_tab(github_url));
-            }
-            if main_response.hovered() || sub_response.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            }
-        });
-        ui.add_space(5.0);
-    }
-
     /// Render the startup / installation title screen.
     pub fn render_installation_wait(&self, ui: &mut egui::Ui, fade_out: bool) {
         use crate::ff_theme as ff;
@@ -331,31 +294,13 @@ impl SubtitleDownloader {
         if self.is_version_checked() {
             if let Some(latest) = self.get_latest_version() {
                 if Self::is_outdated(APP_VERSION, latest) {
-                    let exe_url = format!(
-                        "https://github.com/AnimaTheAeon/Jenova/releases/tag/{}",
-                        latest
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Jenova {} is available. Update from the Updates section below.",
+                            latest
+                        ))
+                        .color(egui::Color32::from_rgb(244, 67, 54)),
                     );
-                    let link_text = format!("-> Jenova {}", latest);
-                    let link_rich =
-                        egui::RichText::new(link_text).color(egui::Color32::from_rgb(3, 169, 244));
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(
-                            egui::RichText::new(
-                                "Your version is out of date. Download the latest release: ",
-                            )
-                            .color(egui::Color32::from_rgb(244, 67, 54)),
-                        );
-                        let resp = ui.hyperlink_to(link_rich, exe_url);
-                        if resp.hovered() {
-                            let painter = ui.painter();
-                            let rect = resp.rect;
-                            let y = rect.bottom() - 2.0;
-                            painter.line_segment(
-                                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-                                egui::Stroke::new(1.5_f32, egui::Color32::from_rgb(3, 169, 244)),
-                            );
-                        }
-                    });
                 }
             } else if let Some(err) = self.get_version_check_error() {
                 ui.label(
