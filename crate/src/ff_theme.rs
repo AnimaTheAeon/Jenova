@@ -600,58 +600,6 @@ pub fn divider(ui: &mut Ui) {
     );
 }
 
-/// Square emblem with a letter, used as a folder "portrait".
-pub fn emblem(ui: &mut Ui, letter: &str, size: f32, active: bool) -> Response {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-    if is_green() {
-        paint_orb(ui.painter(), rect.center(), size * 0.46, active, 0.0);
-        shadow_text(
-            ui,
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            &letter.to_uppercase(),
-            display_font(size * 0.38),
-            Color32::from_rgb(20, 50, 4),
-        );
-        return response;
-    }
-    let painter = ui.painter();
-    let (a, b) = if active {
-        (
-            Color32::from_rgb(70, 130, 230),
-            Color32::from_rgb(14, 30, 110),
-        )
-    } else {
-        (
-            Color32::from_rgb(90, 96, 120),
-            Color32::from_rgb(30, 32, 50),
-        )
-    };
-    let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(rect.left_top(), a);
-    mesh.colored_vertex(rect.right_top(), lerp_color(a, b, 0.5));
-    mesh.colored_vertex(rect.right_bottom(), b);
-    mesh.colored_vertex(rect.left_bottom(), lerp_color(a, b, 0.5));
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    painter.add(Shape::mesh(mesh));
-    painter.rect_stroke(
-        rect,
-        CornerRadius::same(3),
-        Stroke::new(2.0, BORDER_LIGHT()),
-        StrokeKind::Inside,
-    );
-    shadow_text(
-        ui,
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        letter,
-        FontId::proportional(size * 0.55),
-        TEXT(),
-    );
-    response
-}
-
 /// Radial gradient disc made of rings, center color to edge color.
 pub fn radial_disc(painter: &egui::Painter, center: Pos2, radius: f32, stops: &[(f32, Color32)]) {
     let segs = 48;

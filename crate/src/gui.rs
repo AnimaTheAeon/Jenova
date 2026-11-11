@@ -3,17 +3,16 @@
 #[cfg(target_os = "linux")]
 use crate::python_manager::PythonManager;
 use crate::{
-    config::APP_VERSION,
+    config::{APP_VERSION, MAX_CONCURRENT_DOWNLOADS},
     data_structures::{DownloadJob, JobStatus, SubtitleDownloader},
-    debug,
-    helper_functions::{Utils, Validation},
+    ff_theme::{self as ff, pal, TEXT_DIM},
+    helper_functions::Utils,
     info,
     settings::Settings,
     warn,
 };
-use eframe::egui;
+use eframe::egui::{self, RichText};
 use egui_extras::{Column, TableBuilder};
-use rfd::FileDialog;
 
 /// Donation and dependency text color.
 const DEPS_YELLOW: egui::Color32 = egui::Color32::from_rgb(247, 233, 181);
@@ -346,173 +345,81 @@ impl SubtitleDownloader {
         }
     }
 
-    /// Render language selection.
-    pub fn render_language_selection(&mut self, ui: &mut egui::Ui) {
-        const LANGUAGE_LIST: &[(&str, &str)] = &[
-            ("en", "English"),
-            ("en-gb", "English (UK)"),
-            ("en-us", "English (US)"),
-            ("af", "Afrikaans"),
-            ("am", "Amharic"),
-            ("ar", "Arabic"),
-            ("az", "Azerbaijani"),
-            ("bg", "Bulgarian"),
-            ("bn", "Bengali"),
-            ("cs", "Czech"),
-            ("da", "Danish"),
-            ("de", "German"),
-            ("de-at", "German (Austria)"),
-            ("de-ch", "German (Switzerland)"),
-            ("el", "Greek"),
-            ("es", "Spanish"),
-            ("es-es", "Spanish (Spain)"),
-            ("es-mx", "Spanish (Mexico)"),
-            ("et", "Estonian"),
-            ("fa", "Persian/Farsi"),
-            ("fi", "Finnish"),
-            ("fil", "Filipino/Tagalog"),
-            ("fr", "French"),
-            ("fr-ca", "French (Canada)"),
-            ("gu", "Gujarati"),
-            ("he", "Hebrew"),
-            ("hi", "Hindi"),
-            ("hr", "Croatian"),
-            ("hu", "Hungarian"),
-            ("id", "Indonesian"),
-            ("is", "Icelandic"),
-            ("it", "Italian"),
-            ("it-ch", "Italian (Switzerland)"),
-            ("ja", "Japanese"),
-            ("ka", "Georgian"),
-            ("km", "Khmer"),
-            ("kn", "Kannada"),
-            ("ko", "Korean"),
-            ("ku", "Kurdish"),
-            ("lo", "Lao"),
-            ("lt", "Lithuanian"),
-            ("lv", "Latvian"),
-            ("ml", "Malayalam"),
-            ("mn", "Mongolian"),
-            ("ms", "Malay"),
-            ("mt", "Maltese"),
-            ("my", "Burmese"),
-            ("nl", "Dutch"),
-            ("nl-be", "Dutch (Belgium)"),
-            ("no", "Norwegian"),
-            ("or", "Odia"),
-            ("pa", "Punjabi"),
-            ("pl", "Polish"),
-            ("pt", "Portuguese"),
-            ("pt-br", "Portuguese (Brazil)"),
-            ("pt-pt", "Portuguese (Portugal)"),
-            ("ro", "Romanian"),
-            ("ru", "Russian"),
-            ("sk", "Slovak"),
-            ("sl", "Slovenian"),
-            ("sr", "Serbian"),
-            ("sv", "Swedish"),
-            ("sw", "Swahili"),
-            ("ta", "Tamil"),
-            ("te", "Telugu"),
-            ("th", "Thai"),
-            ("tr", "Turkish"),
-            ("uk", "Ukrainian"),
-            ("ur", "Urdu"),
-            ("vi", "Vietnamese"),
-            ("xh", "Xhosa"),
-            ("zh", "Chinese"),
-            ("zh-cn", "Chinese (Simplified)"),
-            ("zh-tw", "Chinese (Traditional)"),
-            ("zu", "Zulu"),
-        ];
-
+    /// Your languages as removable tags, and a box to add more.
+    pub fn render_languages(&mut self, ui: &mut egui::Ui) {
+        let mut changed = false;
+        let mut remove = None;
         ui.horizontal_wrapped(|ui| {
-            let selected_languages = self.get_selected_languages_mut();
-            let selected_text = if selected_languages.is_empty() {
-                "Select Languages".to_string()
-            } else {
-                selected_languages.join(", ")
-            };
-
-            let button_response = ui.add_sized([130.0, ui.spacing().interact_size.y], egui::Button::new(selected_text));
-            if button_response.clicked() {
-                debug!("Button clicked! Current state: {}", self.get_keep_dropdown_open());
-                self.set_keep_dropdown_open(!self.get_keep_dropdown_open());
-                debug!("New state: {}", self.get_keep_dropdown_open());
-            }
-
-            let force_download = self.get_force_download_mut();
-            let force_checkbox_response = ui.checkbox(force_download, "Ignore Embedded Subtitles");
-            if force_checkbox_response.changed() {
-                info!("(Ignore Embedded Subtitles) changed to: {}", *force_download);
-                self.set_keep_dropdown_open(false);
-                self.save_current_settings();
-            }
-            ui.add_space(0.0);
-            let ignore_local_extras = self.get_ignore_local_extras_mut();
-            let ignore_extras_checkbox_response = ui.checkbox(ignore_local_extras, "Ignore Extra Folders for Plex")
-                .on_hover_ui(|ui| {
-                    ui.set_width(300.0);
-                    ui.label("Ignores 'Behind The Scenes', 'Deleted Scenes', 'Featurettes', 'Interviews', 'Scenes', 'Shorts', 'Trailers' and 'Other' folders (case-insensitive)");
-                });
-            if ignore_extras_checkbox_response.changed() {
-                info!("(Ignore Local Extras) changed to: {}", *ignore_local_extras);
-                self.set_keep_dropdown_open(false);
-                self.save_current_settings();
-                if !self.get_folder_path().is_empty() {
-                    self.scan_folder();
+            for (index, code) in self.selected_languages.iter().enumerate() {
+                let text = RichText::new(format!("{}  ×", language_name(code)))
+                    .strong()
+                    .color(pal().on_accent);
+                if ui
+                    .add(egui::Button::new(text).fill(pal().accent))
+                    .on_hover_text("Remove")
+                    .clicked()
+                {
+                    remove = Some(index);
                 }
             }
-
-            let skip_scanned_media = self.get_skip_scanned_media_mut();
-            let skip_scanned_response = ui.checkbox(skip_scanned_media, "Skip scanned media")
-                .on_hover_ui(|ui| {
-                    ui.set_width(320.0);
-                    ui.label("Skip files that already had a successful download unless the file changed or new languages are selected.");
-                });
-            if skip_scanned_response.changed() {
-                info!("(Skip scanned media) changed to: {}", *self.get_skip_scanned_media_mut());
-                self.set_keep_dropdown_open(false);
-                self.save_current_settings();
-                if !self.get_folder_path().is_empty() {
-                    self.scan_folder();
+            if self.selected_languages.is_empty() {
+                ui.label(
+                    RichText::new("No languages yet, so nothing will be downloaded.")
+                        .color(ff::WARN()),
+                );
+            }
+        });
+        if let Some(index) = remove {
+            self.selected_languages.remove(index);
+            changed = true;
+        }
+        let query = self.language_search.trim().to_lowercase();
+        let matches: Vec<(&str, &str)> = if query.is_empty() {
+            Vec::new()
+        } else {
+            LANGUAGES
+                .iter()
+                .filter(|(code, _)| !self.selected_languages.iter().any(|c| c == code))
+                .filter(|(code, name)| name.to_lowercase().contains(&query) || *code == query)
+                .take(8)
+                .copied()
+                .collect()
+        };
+        ui.horizontal(|ui| {
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut self.language_search)
+                    .hint_text("Add a language…")
+                    .desired_width(220.0),
+            );
+            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if let Some((code, _)) = matches.first() {
+                    self.selected_languages.push((*code).to_string());
+                    self.language_search.clear();
+                    changed = true;
                 }
             }
         });
-
-        if self.get_keep_dropdown_open() {
-            ui.add_space(5.0);
-            ui.group(|ui| {
-                ui.set_width(260.0);
-
-                egui::ScrollArea::vertical()
-                    .max_height(320.0)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        for &(code, name) in LANGUAGE_LIST {
-                            let selected_languages = self.get_selected_languages_mut();
-                            let mut selected =
-                                selected_languages.iter().any(|selected| selected == code);
-                            let display_text = format!("{} [{}]", name, code);
-                            if ui.checkbox(&mut selected, display_text).changed() {
-                                if selected {
-                                    selected_languages.push(code.to_string());
-                                    debug!("Language selected: {}", code);
-                                } else {
-                                    selected_languages.retain(|c| c != code);
-                                    debug!("Language deselected: {}", code);
-                                }
-
-                                self.save_current_settings();
-                            }
-                        }
-                    });
+        if !query.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                if matches.is_empty() {
+                    ui.label(RichText::new("No match").color(TEXT_DIM()));
+                }
+                for (code, name) in &matches {
+                    if ui.button(format!("+ {name}")).clicked() {
+                        self.selected_languages.push((*code).to_string());
+                        self.language_search.clear();
+                        changed = true;
+                    }
+                }
             });
+        }
+        if changed {
+            self.save_current_settings();
         }
     }
 
-    /// Render matching options.
-    pub fn render_matching_options(&mut self, ui: &mut egui::Ui) {
+    /// Which subtitle sites to search, and the OpenSubtitles.com login.
+    pub fn render_providers(&mut self, ui: &mut egui::Ui) {
         const PROVIDERS: &[(&str, &str)] = &[
             ("addic7ed", "Addic7ed"),
             ("gestdown", "Gestdown"),
@@ -522,412 +429,252 @@ impl SubtitleDownloader {
             ("podnapisi", "Podnapisi"),
             ("tvsubtitles", "TVSubtitles"),
         ];
-        const REFINERS: &[(&str, &str)] = &[
-            ("hash", "Hash"),
-            ("metadata", "Metadata"),
-            ("tmdb", "TMDB"),
-            ("tvdb", "TVDB"),
-        ];
-
-        let panel_response = egui::CollapsingHeader::new(egui::RichText::new("Subliminal Matching").color(egui::Color32::WHITE))
-            .default_open(self.get_matching_options_open())
-            .show(ui, |ui| {
-             ui.label(egui::RichText::new("Defaults select all providers; clear every box to use Subliminal's full provider pool.").color(egui::Color32::WHITE).size(12.0));
-            let mut changed = false;
-            ui.horizontal_wrapped(|ui| {
-                for (code, name) in PROVIDERS {
-                    let mut selected = self.providers.iter().any(|value| value == code);
-                    if ui.checkbox(&mut selected, *name).changed() {
-                        changed = true;
-                        if selected {
-                            if !self.providers.iter().any(|value| value == code) {
-                                self.providers.push((*code).to_string());
-                            }
-                        } else {
-                            self.providers.retain(|value| value != code);
-                        }
+        let mut changed = false;
+        ui.horizontal_wrapped(|ui| {
+            for (code, name) in PROVIDERS {
+                let mut selected = self.providers.iter().any(|value| value == code);
+                if ui.checkbox(&mut selected, *name).changed() {
+                    changed = true;
+                    if selected {
+                        self.providers.push((*code).to_string());
+                    } else {
+                        self.providers.retain(|value| value != code);
                     }
                 }
-            });
-
-            ui.label(egui::RichText::new("Refiners:").color(egui::Color32::WHITE));
-            ui.horizontal_wrapped(|ui| {
-                for (code, name) in REFINERS {
-                    let mut selected = self.refiners.iter().any(|value| value == code);
-                    if ui.checkbox(&mut selected, *name).changed() {
-                        changed = true;
-                        if selected {
-                            if !self.refiners.iter().any(|value| value == code) {
-                                self.refiners.push((*code).to_string());
-                            }
-                        } else {
-                            self.refiners.retain(|value| value != code);
-                        }
-                    }
-                }
-            });
-
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Minimum match score:").color(egui::Color32::WHITE));
-                let mut score_text = self.minimum_score.to_string();
-                let response = ui.add_sized(
-                    [35.0, ui.spacing().interact_size.y],
-                    egui::TextEdit::singleline(&mut score_text),
-                );
-                if response.changed() {
-                    if let Ok(score) = score_text.parse::<u8>() {
-                        if score <= 100 {
-                            self.minimum_score = score;
-                            changed = true;
-                        }
-                    }
-                }
-            });
-
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Max OpenSubtitles.com pages:").color(egui::Color32::WHITE));
-                let mut pages_text = self.opensubtitles_max_pages.map(|v| v.to_string()).unwrap_or_default();
-                let response = ui.add_sized(
-                    [35.0, ui.spacing().interact_size.y],
-                    egui::TextEdit::singleline(&mut pages_text),
-                ).on_hover_text("Empty = unlimited. Default 3. Range 1-20.");
-                if response.changed() {
-                    let trimmed = pages_text.trim();
-                    if trimmed.is_empty() {
-                        self.opensubtitles_max_pages = None;
-                        changed = true;
-                    } else if let Ok(v) = trimmed.parse::<u8>() {
-                        if (1..=20).contains(&v) {
-                            self.opensubtitles_max_pages = Some(v);
-                            changed = true;
-                        }
-                    }
-                }
-            });
-
-            egui::CollapsingHeader::new(egui::RichText::new("OpenSubtitles.com credentials (optional, for higher limits)").color(egui::Color32::WHITE))
-                .default_open(false)
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("API key:").color(egui::Color32::WHITE));
-                        let mut apikey = self.opensubtitlescom_apikey.clone();
-                        let resp = ui.add(
-                            egui::TextEdit::singleline(&mut apikey)
-                                .password(!self.show_opensubtitles_apikey)
-                                .desired_width(260.0)
-                                .hint_text("Paste from opensubtitles.com/api")
-                        );
-                        if resp.changed() {
-                            self.opensubtitlescom_apikey = apikey;
-                            changed = true;
-                        }
-                        if ui.button(if self.show_opensubtitles_apikey { "Hide" } else { "Show" }).clicked() {
-                            self.show_opensubtitles_apikey = !self.show_opensubtitles_apikey;
-                        }
-                        let link = ui.hyperlink_to("Get API key", "https://www.opensubtitles.com/api");
-                        if link.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Username:").color(egui::Color32::WHITE));
-                        let mut username = self.opensubtitlescom_username.clone();
-                        if ui.add(egui::TextEdit::singleline(&mut username).desired_width(140.0)).changed() {
-                            self.opensubtitlescom_username = username;
-                            changed = true;
-                        }
-                        ui.label(egui::RichText::new("Password:").color(egui::Color32::WHITE));
-                        let mut password = self.opensubtitlescom_password.clone();
-                        if ui.add(egui::TextEdit::singleline(&mut password).password(true).desired_width(140.0)).changed() {
-                            self.opensubtitlescom_password = password;
-                            changed = true;
-                        }
-                    });
-                    ui.label(egui::RichText::new(Settings::credentials_storage_blurb()).color(egui::Color32::WHITE).weak().size(11.0));
-                });
-
-            if ui.checkbox(&mut self.exclude_hearing_impaired, "Exclude SDH / captions").changed() {
+            }
+        });
+        if self.providers.is_empty() {
+            ui.label(RichText::new("None ticked: Subliminal uses all of its sites.").color(TEXT_DIM()).size(12.0));
+        }
+        ui.add_space(4.0);
+        ui.label(RichText::new("OpenSubtitles.com login (optional, for higher download limits)").color(TEXT_DIM()));
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Username");
+            if ui
+                .add(egui::TextEdit::singleline(&mut self.opensubtitlescom_username).desired_width(140.0))
+                .changed()
+            {
                 changed = true;
             }
-
-            if changed {
-                self.save_current_settings();
+            ui.label("Password");
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut self.opensubtitlescom_password)
+                    .password(true)
+                    .desired_width(140.0),
+            );
+            if response.lost_focus() {
+                self.save_password();
             }
-            });
-
-        if panel_response.fully_open() && !self.get_matching_options_open() {
-            self.set_matching_options_open(true);
-            self.save_current_settings();
-        } else if panel_response.fully_closed() && self.get_matching_options_open() {
-            self.set_matching_options_open(false);
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.label("API key");
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.opensubtitlescom_apikey)
+                        .password(!self.show_opensubtitles_apikey)
+                        .desired_width(260.0)
+                        .hint_text("Paste from opensubtitles.com/api"),
+                )
+                .changed()
+            {
+                changed = true;
+            }
+            if ui.small_button(if self.show_opensubtitles_apikey { "Hide" } else { "Show" }).clicked() {
+                self.show_opensubtitles_apikey = !self.show_opensubtitles_apikey;
+            }
+            let link = ui.hyperlink_to("Get API key", "https://www.opensubtitles.com/api");
+            if link.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+        });
+        ui.label(RichText::new(Settings::credentials_storage_blurb()).color(TEXT_DIM()).size(11.0));
+        if changed {
             self.save_current_settings();
         }
     }
 
-    /// Render concurrent download settings.
+    /// Refiners and match-quality knobs (under Advanced).
+    pub fn render_matching_advanced(&mut self, ui: &mut egui::Ui) {
+        const REFINERS: &[(&str, &str, &str)] = &[
+            ("hash", "File hash", "Match by the video file's fingerprint"),
+            ("metadata", "Video metadata", "Read resolution and codecs from the file (skipped on network shares)"),
+            ("tmdb", "TMDB", "Look up movie details on The Movie Database"),
+            ("tvdb", "TVDB", "Look up episode details on TheTVDB"),
+        ];
+        let mut changed = false;
+        ui.label("Ways to identify a video");
+        ui.horizontal_wrapped(|ui| {
+            for (code, name, hint) in REFINERS {
+                let mut selected = self.refiners.iter().any(|value| value == code);
+                if ui.checkbox(&mut selected, *name).on_hover_text(*hint).changed() {
+                    changed = true;
+                    if selected {
+                        self.refiners.push((*code).to_string());
+                    } else {
+                        self.refiners.retain(|value| value != code);
+                    }
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label("Minimum match score");
+            changed |= ui
+                .add(egui::DragValue::new(&mut self.minimum_score).range(0..=100))
+                .on_hover_text("0 accepts the best match Subliminal finds. Higher is stricter but finds less.")
+                .changed();
+        });
+        ui.horizontal(|ui| {
+            ui.label("OpenSubtitles.com result pages");
+            let mut pages = self.opensubtitles_max_pages.unwrap_or(3);
+            if ui
+                .add(egui::DragValue::new(&mut pages).range(1..=20))
+                .on_hover_text("How many pages of results to look through. More is slower.")
+                .changed()
+            {
+                self.opensubtitles_max_pages = Some(pages);
+                changed = true;
+            }
+        });
+        if changed {
+            self.save_current_settings();
+        }
+    }
+
+    /// "Downloads at once" (1 to 5).
     pub fn render_concurrent_downloads(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Concurrent Downloads:").color(egui::Color32::WHITE));
-            let concurrent_downloads = self.get_concurrent_downloads_mut();
-            let mut concurrent_text = concurrent_downloads.to_string();
-            let text_response = ui.add_sized(
-                [25.0, ui.spacing().interact_size.y],
-                egui::TextEdit::singleline(&mut concurrent_text),
-            );
-            if text_response.changed() {
-                if let Ok(value) = concurrent_text.parse::<usize>() {
-                    if Validation::is_valid_concurrent_downloads(value) {
-                        let old_value = *concurrent_downloads;
-                        *concurrent_downloads = value;
-                        debug!(
-                            "Concurrent downloads changed from {} to {}",
-                            old_value, concurrent_downloads
-                        );
-                        self.save_current_settings();
-                    } else {
-                        warn!("Invalid concurrent downloads value: {}", value);
-                    }
-                }
-                self.set_keep_dropdown_open(false);
-            }
-            if text_response.gained_focus() {
-                self.set_keep_dropdown_open(false);
-            }
-        });
-    }
-
-    /// Render folder selection.
-    pub fn render_folder_selection(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Folder to scan:").color(egui::Color32::WHITE));
-            let folder_button_response = ui.button("Select Folder");
-            if folder_button_response.clicked() {
-                self.set_keep_dropdown_open(false);
-                if let Some(folder) = FileDialog::new().pick_folder() {
-                    let new_folder = folder.display().to_string();
-                    if self.get_folder_path() != new_folder
-                        && Validation::is_valid_folder(&new_folder)
-                    {
-                        info!("Folder selected: {}", new_folder);
-                        self.set_folder_path(new_folder);
-                        self.scan_folder();
-                    } else if !Validation::is_valid_folder(&new_folder) {
-                        warn!("Invalid folder selected: {}", new_folder);
-                    }
-                }
-            }
-            ui.label(self.get_folder_path());
-
-            if !self.get_folder_path().is_empty() {
-                let scanning = self.is_scanning();
-                if scanning {
-                    let button_size = egui::vec2(20.0, 20.0);
-                    let (rect, _response) =
-                        ui.allocate_exact_size(button_size, egui::Sense::hover());
-                    let painter = ui.painter();
-                    let center = rect.center();
-                    let radius = 7.0;
-                    let time = ui.ctx().input(|i| i.time) as f32;
-                    let angle = (time * 2.0) % (2.0 * std::f32::consts::PI);
-                    let start_angle = angle;
-                    let end_angle = angle + std::f32::consts::PI * 1.5;
-                    let segments = 16;
-                    let angle_step = (end_angle - start_angle) / segments as f32;
-                    for i in 0..segments {
-                        let a1 = start_angle + i as f32 * angle_step;
-                        let a2 = start_angle + (i + 1) as f32 * angle_step;
-                        let p1 = center + egui::vec2(radius * a1.cos(), radius * a1.sin());
-                        let p2 = center + egui::vec2(radius * a2.cos(), radius * a2.sin());
-                        painter.line_segment(
-                            [p1, p2],
-                            egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(147, 115, 192)),
-                        );
-                    }
-                } else {
-                    let color = egui::Color32::from_rgb(136, 136, 136);
-                    let response = ui.add(
-                        egui::Button::new(egui::RichText::new("↻").color(color).size(16.0))
-                            .frame(false),
-                    );
-                    if response.hovered() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    }
-                    if response.clicked() {
-                        info!("Rescan button clicked");
-                        self.set_keep_dropdown_open(false);
-                        self.scan_folder();
-                    }
-                    response.on_hover_text("Rescan folder");
-                }
-            }
-        });
-    }
-
-    /// Render scan results.
-    pub fn render_scan_results(&self, ui: &mut egui::Ui) {
-        if !self.get_folder_path().is_empty() {
-            let scanned_count = {
-                if let Ok(videos) = self.scanned_videos.lock() {
-                    videos.len()
-                } else {
-                    0
-                }
-            };
-            let missing_count = {
-                if let Ok(videos) = self.videos_missing_subs.lock() {
-                    videos.len()
-                } else {
-                    0
-                }
-            };
-            ui.horizontal(|ui| {
-                ui.label(format!("Found videos: {}", scanned_count));
-                ui.add_space(5.0);
-                ui.label("-");
-                ui.add_space(5.0);
-                if self.get_overwrite_existing() {
-                    ui.label(format!("Overwriting {} subtitles", missing_count));
-                } else {
-                    ui.label(format!("Missing subtitles: {}", missing_count));
-                }
-
-                if self.get_ignore_local_extras() && self.get_ignored_extra_folders() > 0 {
-                    ui.add_space(5.0);
-                    ui.label("-");
-                    ui.add_space(5.0);
-                    ui.label(format!(
-                        "Ignoring {} extra folders",
-                        self.get_ignored_extra_folders()
-                    ));
-                }
-                if self.get_skipped_scanned_count() > 0 {
-                    ui.add_space(5.0);
-                    ui.label("-");
-                    ui.add_space(5.0);
-                    ui.label(format!(
-                        "Skipping {} scanned",
-                        self.get_skipped_scanned_count()
-                    ));
-                }
-            });
-        }
-    }
-
-    /// Render download status.
-    pub fn render_status(&self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if self.is_downloading() {
-                let time = ui.ctx().input(|i| i.time) as f32;
-                let rotation_speed = 2.0;
-                let angle = (time * rotation_speed) % (2.0 * std::f32::consts::PI);
-
-                let center = ui.cursor().min + egui::vec2(8.0, 8.0);
-                let radius = 6.0;
-                let painter = ui.painter();
-
-                let start_angle = angle;
-                let end_angle = angle + std::f32::consts::PI * 1.5;
-
-                let segments = 16;
-                let angle_step = (end_angle - start_angle) / segments as f32;
-
-                for i in 0..segments {
-                    let angle1 = start_angle + i as f32 * angle_step;
-                    let angle2 = start_angle + (i + 1) as f32 * angle_step;
-
-                    let p1 = center + egui::vec2(radius * angle1.cos(), radius * angle1.sin());
-                    let p2 = center + egui::vec2(radius * angle2.cos(), radius * angle2.sin());
-
-                    painter.line_segment(
-                        [p1, p2],
-                        egui::Stroke::new(2.0_f32, egui::Color32::from_rgb(147, 115, 192)),
-                    );
-                }
-
-                ui.add_space(20.0);
-            } else if self.get_total_downloads() > 0
-                && self.get_downloads_completed() == self.get_total_downloads()
+            ui.label("Downloads at once");
+            if ui
+                .add(egui::DragValue::new(&mut self.concurrent_downloads).range(1..=MAX_CONCURRENT_DOWNLOADS))
+                .on_hover_text("Subtitle sites limit (and can block) apps that ask for too much at once")
+                .changed()
             {
-                let cached_jobs = self.get_cached_jobs();
-                let all_failed = cached_jobs
-                    .iter()
-                    .all(|j| matches!(j.status, JobStatus::Failed(_)));
-                let all_succeeded = cached_jobs.iter().all(|j| {
-                    matches!(
-                        j.status,
-                        JobStatus::Success | JobStatus::EmbeddedExists(_) | JobStatus::Skipped
-                    )
-                });
-
-                let center = ui.cursor().min + egui::vec2(8.0, 8.0);
-                let painter = ui.painter();
-                let stroke_width: f32 = 2.0;
-
-                if all_failed {
-                    let x_color = egui::Color32::from_rgb(244, 67, 54);
-
-                    let p1 = center + egui::vec2(-4.0, -4.0);
-                    let p2 = center + egui::vec2(4.0, 4.0);
-                    painter.line_segment([p1, p2], egui::Stroke::new(stroke_width, x_color));
-
-                    let p3 = center + egui::vec2(4.0, -4.0);
-                    let p4 = center + egui::vec2(-4.0, 4.0);
-                    painter.line_segment([p3, p4], egui::Stroke::new(stroke_width, x_color));
-                } else if all_succeeded {
-                    let check_color = egui::Color32::from_rgb(76, 175, 80);
-
-                    let p1 = center + egui::vec2(-4.0, 0.0);
-                    let p2 = center + egui::vec2(-1.0, 3.0);
-                    painter.line_segment([p1, p2], egui::Stroke::new(stroke_width, check_color));
-
-                    let p3 = center + egui::vec2(-1.0, 3.0);
-                    let p4 = center + egui::vec2(4.0, -2.0);
-                    painter.line_segment([p3, p4], egui::Stroke::new(stroke_width, check_color));
-                }
-                ui.add_space(20.0);
+                self.save_current_settings();
             }
-
-            ui.label(&self.status);
         });
-    }
-
-    /// Render the progress bar.
-    pub fn render_progress_bar(&self, ui: &mut egui::Ui) {
-        let completed_count = self.get_downloads_completed();
-        let total = self.get_total_downloads();
-        if total > 0 {
-            ui.add_space(10.0);
-            let progress_text = format!(
-                "Progress: {} / {} ({})",
-                completed_count,
-                total,
-                Utils::format_progress(completed_count, total)
-            );
-            ui.label(progress_text);
-        }
-        if total > 0 {
-            let progress = completed_count as f32 / total as f32;
-            let window_width = ui.available_width();
-            let progress_bar = egui::ProgressBar::new(progress)
-                .show_percentage()
-                .fill(egui::Color32::from_rgb(118, 94, 152))
-                .corner_radius(egui::CornerRadius::same(3))
-                .desired_width(window_width - 18.0);
-            ui.add(progress_bar);
-        }
     }
 }
 
-/// Render a table of subtitle jobs.
-pub(crate) fn render_jobs_table(
+/// Languages offered in Settings: (Subliminal code, name).
+pub(crate) const LANGUAGES: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("en-gb", "English (UK)"),
+    ("en-us", "English (US)"),
+    ("af", "Afrikaans"),
+    ("am", "Amharic"),
+    ("ar", "Arabic"),
+    ("az", "Azerbaijani"),
+    ("bg", "Bulgarian"),
+    ("bn", "Bengali"),
+    ("cs", "Czech"),
+    ("da", "Danish"),
+    ("de", "German"),
+    ("de-at", "German (Austria)"),
+    ("de-ch", "German (Switzerland)"),
+    ("el", "Greek"),
+    ("es", "Spanish"),
+    ("es-es", "Spanish (Spain)"),
+    ("es-mx", "Spanish (Mexico)"),
+    ("et", "Estonian"),
+    ("fa", "Persian/Farsi"),
+    ("fi", "Finnish"),
+    ("fil", "Filipino/Tagalog"),
+    ("fr", "French"),
+    ("fr-ca", "French (Canada)"),
+    ("gu", "Gujarati"),
+    ("he", "Hebrew"),
+    ("hi", "Hindi"),
+    ("hr", "Croatian"),
+    ("hu", "Hungarian"),
+    ("id", "Indonesian"),
+    ("is", "Icelandic"),
+    ("it", "Italian"),
+    ("it-ch", "Italian (Switzerland)"),
+    ("ja", "Japanese"),
+    ("ka", "Georgian"),
+    ("km", "Khmer"),
+    ("kn", "Kannada"),
+    ("ko", "Korean"),
+    ("ku", "Kurdish"),
+    ("lo", "Lao"),
+    ("lt", "Lithuanian"),
+    ("lv", "Latvian"),
+    ("ml", "Malayalam"),
+    ("mn", "Mongolian"),
+    ("ms", "Malay"),
+    ("mt", "Maltese"),
+    ("my", "Burmese"),
+    ("nl", "Dutch"),
+    ("nl-be", "Dutch (Belgium)"),
+    ("no", "Norwegian"),
+    ("or", "Odia"),
+    ("pa", "Punjabi"),
+    ("pl", "Polish"),
+    ("pt", "Portuguese"),
+    ("pt-br", "Portuguese (Brazil)"),
+    ("pt-pt", "Portuguese (Portugal)"),
+    ("ro", "Romanian"),
+    ("ru", "Russian"),
+    ("sk", "Slovak"),
+    ("sl", "Slovenian"),
+    ("sr", "Serbian"),
+    ("sv", "Swedish"),
+    ("sw", "Swahili"),
+    ("ta", "Tamil"),
+    ("te", "Telugu"),
+    ("th", "Thai"),
+    ("tr", "Turkish"),
+    ("uk", "Ukrainian"),
+    ("ur", "Urdu"),
+    ("vi", "Vietnamese"),
+    ("xh", "Xhosa"),
+    ("zh", "Chinese"),
+    ("zh-cn", "Chinese (Simplified)"),
+    ("zh-tw", "Chinese (Traditional)"),
+    ("zu", "Zulu"),
+];
+
+/// Display name for a language code.
+pub(crate) fn language_name(code: &str) -> String {
+    LANGUAGES
+        .iter()
+        .find(|(c, _)| *c == code)
+        .map(|(_, name)| name.to_string())
+        .unwrap_or_else(|| crate::subtitle_utils::SubtitleUtils::language_code_to_name(code).to_string())
+}
+
+/// Short status word, its color, and the detail text for a job.
+fn job_status_view(job: &DownloadJob) -> (&'static str, egui::Color32, String) {
+    let dim = TEXT_DIM();
+    match &job.status {
+        JobStatus::Pending => ("Queued", ff::WARN(), job.output.clone()),
+        JobStatus::Running => ("Searching", ff::LABEL(), job.output.clone()),
+        JobStatus::Success => (
+            "Found",
+            ff::GOOD(),
+            job.subtitle_paths
+                .first()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        ),
+        JobStatus::Skipped => ("Had subs", dim, "Already has subtitles in your languages".into()),
+        JobStatus::EmbeddedExists(message) => ("Embedded", dim, message.clone()),
+        JobStatus::NotFound(message) => ("Not yet", ff::TEXT(), message.clone()),
+        JobStatus::Failed(message) => ("Error", ff::BAD(), message.clone()),
+        JobStatus::Cancelled => ("Cancelled", dim, String::new()),
+    }
+}
+
+/// The Activity list: video, status, details, time.
+pub(crate) fn render_activity_table(
     ui: &mut egui::Ui,
     jobs: &[DownloadJob],
     roots: &[std::path::PathBuf],
     id_salt: &str,
 ) {
-    let row_height = 22.0;
+    let row_height = 24.0;
     let available_height = ui.available_height();
-
     TableBuilder::new(ui)
         .id_salt(id_salt)
         .max_scroll_height(available_height.max(100.0))
@@ -936,211 +683,129 @@ pub(crate) fn render_jobs_table(
         .striped(true)
         .resizable(true)
         .vscroll(true)
-        .column(Column::initial(260.0).at_least(150.0).resizable(true))
-        .column(Column::auto().at_least(80.0).resizable(true))
+        .column(Column::initial(300.0).at_least(150.0).resizable(true))
+        .column(Column::exact(86.0))
         .column(Column::remainder().at_least(150.0))
+        .column(Column::exact(64.0))
         .header(row_height, |mut header| {
-            header.col(|ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.strong("Video");
+            for title in ["Video", "Status", "Details", "When"] {
+                header.col(|ui| {
+                    ui.strong(title);
                 });
-            });
-            header.col(|ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.strong("Status");
-                });
-            });
-            header.col(|ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.strong("Output");
-                });
-            });
+            }
         })
         .body(|mut body| {
             for job in jobs {
-                let (status_text, status_color) = match &job.status {
-                    JobStatus::Pending => ("Pending", egui::Color32::from_rgb(230, 194, 0)),
-                    JobStatus::Running => ("Running", egui::Color32::from_rgb(147, 115, 192)),
-                    JobStatus::Success => ("Success", egui::Color32::from_rgb(76, 175, 80)),
-                    JobStatus::Skipped => ("Skipped", egui::Color32::from_rgb(136, 136, 136)),
-                    JobStatus::EmbeddedExists(_) => {
-                        ("Embedded", egui::Color32::from_rgb(230, 194, 0))
-                    }
-                    JobStatus::Failed(_) => ("Failed", egui::Color32::from_rgb(244, 67, 54)),
-                };
-
-                let subtitle_paths = &job.subtitle_paths;
-
+                let (status_text, status_color, detail) = job_status_view(job);
                 body.row(row_height, |mut row| {
                     row.col(|ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            let video_path = &job.video_path;
-                            let scan_root = roots
-                                .iter()
-                                .find(|root| video_path.starts_with(root))
-                                .map(|root| root.as_path())
-                                .unwrap_or(std::path::Path::new(""));
-                            let file_name = Utils::get_file_name(video_path);
-
-                            let mut display_parts = Vec::new();
-                            if let Some(parent) =
-                                video_path.parent().filter(|path| *path != scan_root)
-                            {
-                                if let Some(show) = parent
-                                    .parent()
-                                    .filter(|path| *path != scan_root)
-                                    .and_then(|path| path.file_name())
-                                {
-                                    display_parts.push(show.to_string_lossy().into_owned());
-                                }
-                                if let Some(season) = parent.file_name() {
-                                    display_parts.push(season.to_string_lossy().into_owned());
-                                }
-                            }
-                            display_parts.push(file_name);
-                            let display_name = display_parts.join(std::path::MAIN_SEPARATOR_STR);
-                            let path_str = video_path.display().to_string();
-                            let response = ui.add(
-                                egui::Label::new(egui::RichText::new(&display_name).monospace())
+                        let video_path = &job.video_path;
+                        let response = ui
+                            .add(
+                                egui::Label::new(display_name(video_path, roots))
                                     .truncate()
                                     .sense(egui::Sense::click()),
-                            );
+                            )
+                            .on_hover_text(format!("{}\nClick to open its folder", video_path.display()));
+                        if response.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if response.clicked() {
+                            if let Err(e) = Utils::open_containing_folder(video_path) {
+                                warn!("Failed to open folder for {}: {}", video_path.display(), e);
+                            }
+                        }
+                    });
+                    row.col(|ui| {
+                        ui.label(RichText::new(status_text).color(status_color).strong());
+                    });
+                    row.col(|ui| {
+                        let response = ui.add(
+                            egui::Label::new(RichText::new(&detail).color(TEXT_DIM()))
+                                .truncate()
+                                .sense(egui::Sense::click()),
+                        );
+                        if matches!(job.status, JobStatus::Failed(_)) {
                             if response.hovered() {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
                             if response.clicked() {
-                                if let Err(e) = Utils::open_containing_folder(video_path) {
-                                    warn!("Failed to open folder for {}: {}", path_str, e);
+                                if let Err(e) = Utils::open_log_file() {
+                                    warn!("Failed to open log file: {}", e);
                                 }
                             }
-                            response.on_hover_text(&path_str);
-                        });
+                            response.on_hover_text(format!("{detail}\nClick to open the log file"));
+                        } else if !detail.is_empty() {
+                            response.on_hover_text(&detail);
+                        }
                     });
-
                     row.col(|ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            ui.label(
-                                egui::RichText::new(status_text)
-                                    .color(status_color)
-                                    .monospace(),
-                            );
-                        });
-                    });
-
-                    row.col(|ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            match &job.status {
-                                JobStatus::Success => {
-                                    if let Some(sub_path) = subtitle_paths.first() {
-                                        let path_str = sub_path.display().to_string();
-                                        let color = egui::Color32::from_rgb(76, 175, 80);
-                                        let response = ui.add(
-                                            egui::Label::new(
-                                                egui::RichText::new(&path_str)
-                                                    .color(color)
-                                                    .monospace(),
-                                            )
-                                            .sense(egui::Sense::click()),
-                                        );
-                                        if response.hovered() {
-                                            ui.ctx()
-                                                .set_cursor_icon(egui::CursorIcon::PointingHand);
-                                        }
-                                        if response.clicked() {
-                                            if let Err(e) = Utils::open_containing_folder(sub_path)
-                                            {
-                                                warn!(
-                                                    "Failed to open folder for {}: {}",
-                                                    path_str, e
-                                                );
-                                            }
-                                        }
-                                        response.on_hover_text_at_pointer("Open containing folder");
-                                    }
-                                }
-                                JobStatus::Failed(err) => {
-                                    let color = egui::Color32::from_rgb(244, 67, 54);
-                                    if err.contains("see log") {
-                                        let response = ui.add(
-                                            egui::Label::new(
-                                                egui::RichText::new(err).color(color).monospace(),
-                                            )
-                                            .sense(egui::Sense::click()),
-                                        );
-                                        if response.hovered() {
-                                            ui.ctx()
-                                                .set_cursor_icon(egui::CursorIcon::PointingHand);
-                                        }
-                                        if response.clicked() {
-                                            if let Err(e) = Utils::open_log_file() {
-                                                warn!("Failed to open log file: {}", e);
-                                            }
-                                        }
-                                        response.on_hover_text_at_pointer("Open log file");
-                                    } else {
-                                        ui.label(egui::RichText::new(err).color(color).monospace());
-                                    }
-                                }
-                                JobStatus::EmbeddedExists(msg) => {
-                                    ui.label(
-                                        egui::RichText::new(msg)
-                                            .color(egui::Color32::from_rgb(230, 194, 0))
-                                            .monospace(),
-                                    );
-                                }
-                                JobStatus::Skipped => {
-                                    ui.label(
-                                        egui::RichText::new(&job.output)
-                                            .color(egui::Color32::from_rgb(136, 136, 136))
-                                            .monospace(),
-                                    );
-                                }
-                                JobStatus::Pending | JobStatus::Running => {
-                                    if !job.output.is_empty() {
-                                        let color = egui::Color32::from_rgb(172, 152, 199);
-                                        let response = ui.add(
-                                            egui::Label::new(
-                                                egui::RichText::new(&job.output)
-                                                    .color(color)
-                                                    .monospace(),
-                                            )
-                                            .truncate(),
-                                        );
-                                        response.on_hover_text_at_pointer(&job.output);
-                                    } else if let Some(sub_path) = subtitle_paths.first() {
-                                        let srt_name = sub_path
-                                            .file_name()
-                                            .map(|name| name.to_string_lossy().to_string())
-                                            .unwrap_or_else(|| sub_path.display().to_string());
-                                        ui.label(
-                                            egui::RichText::new(&srt_name)
-                                                .color(egui::Color32::from_rgb(172, 152, 199))
-                                                .monospace(),
-                                        );
-                                    }
-                                }
-                            }
-                        });
+                        ui.label(RichText::new(when(job.at)).color(TEXT_DIM()).size(12.0));
                     });
                 });
             }
         });
 }
 
+/// "Show/Season 01/Episode.mkv" relative to the folder it came from.
+fn display_name(video_path: &std::path::Path, roots: &[std::path::PathBuf]) -> String {
+    let root = roots
+        .iter()
+        .find(|root| video_path.starts_with(root))
+        .map(|root| root.as_path())
+        .unwrap_or(std::path::Path::new(""));
+    let mut parts = Vec::new();
+    if let Some(parent) = video_path.parent().filter(|path| *path != root) {
+        if let Some(show) = parent.parent().filter(|path| *path != root).and_then(|p| p.file_name()) {
+            parts.push(show.to_string_lossy().into_owned());
+        }
+        if let Some(season) = parent.file_name() {
+            parts.push(season.to_string_lossy().into_owned());
+        }
+    }
+    parts.push(Utils::get_file_name(video_path));
+    parts.join(std::path::MAIN_SEPARATOR_STR)
+}
+
+/// "14:05" today, "Mon" this week, "Nov 3" before that.
+fn when(at: chrono::DateTime<chrono::Local>) -> String {
+    let now = chrono::Local::now();
+    let age = now.signed_duration_since(at);
+    if at.date_naive() == now.date_naive() {
+        at.format("%H:%M").to_string()
+    } else if age < chrono::Duration::days(6) {
+        at.format("%a").to_string()
+    } else {
+        at.format("%b %-d").to_string()
+    }
+}
+
 impl eframe::App for SubtitleDownloader {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        // Hide the window the moment X is clicked; cleanup happens after.
         if ctx.input(|i| i.viewport().close_requested()) {
+            if crate::tray::available() && !crate::tray::quitting() {
+                // Closing hides Jenova in the tray; it keeps watching.
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                crate::tray::hide_window();
+                return;
+            }
+            // Quitting: hide at once, clean up after.
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
+
+        self.poll_init_check();
+        self.handle_installation_states();
+        self.sync_with_engine(&ctx);
+        if !crate::tray::window_visible() {
+            // Hidden in the tray: nothing to draw.
+            return;
+        }
+
         ctx.style_mut_of(egui::Theme::Dark, |style| {
             style.spacing.scroll.floating = false;
             style.spacing.scroll.bar_width = 8.0;
         });
-
-        self.poll_init_check();
-        self.handle_installation_states();
         self.begin_splash_dismiss_if_ready();
         if !self.can_show_main_ui() {
             egui::CentralPanel::default().show(ui, |ui| {
@@ -1153,11 +818,8 @@ impl eframe::App for SubtitleDownloader {
             return;
         }
 
-        self.check_download_completion();
         self.refresh_installation_status();
         self.poll_version_check();
-
-        self.sync_watch_service(&ctx);
 
         egui::CentralPanel::default()
             .frame(
@@ -1179,68 +841,17 @@ impl eframe::App for SubtitleDownloader {
                 }
             });
 
-        if self.scanning {
-            if let Some(rx) = &self.scan_done_receiver {
-                if let Ok((ignored_count, skipped_count, scan_settings)) = rx.try_recv() {
-                    self.scanning = false;
-                    self.status = "Scan completed.".to_string();
-                    self.scan_done_receiver = None;
-
-                    self.ignored_extra_folders = ignored_count;
-                    self.skipped_scanned_count = skipped_count;
-                    if ignored_count > 0 {
-                        info!(
-                            "Scan completed with {} extra folders ignored",
-                            ignored_count
-                        );
-                    }
-                    if skipped_count > 0 {
-                        info!(
-                            "Scan completed with {} previously scanned files marked skipped",
-                            skipped_count
-                        );
-                    }
-
-                    info!("Scan completed, starting downloads automatically");
-                    self.start_downloads_with_settings(scan_settings);
-                }
-            }
-        }
-
-        if self.downloading || self.scanning {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+        if self.installing_python || self.installing_subliminal || self.watch.shared.busy() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
         } else {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
-        }
-        if self.installing_python || self.installing_subliminal {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
     }
 
     fn on_exit(&mut self) {
-        self.prepare_for_exit();
-
+        self.shutdown_flag.store(true, std::sync::atomic::Ordering::Relaxed);
         self.background_check_receiver = None;
-
-        if let Some(handle) = self.background_check_handle.take() {
-            let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let _ = handle.join();
-                let _ = tx.send(());
-            });
-
-            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(_) => {
-                    info!("Background thread exited gracefully");
-                }
-                Err(_) => {
-                    warn!(
-                        "Background thread did not exit within timeout, continuing with shutdown"
-                    );
-                }
-            }
-        }
-
+        self.engine.shutdown();
         info!("Application closed by user");
         info!("");
         info!("---------------------------------------------------------------");

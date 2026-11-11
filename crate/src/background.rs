@@ -1,28 +1,24 @@
-//! Background mode: run the folder watcher without a window, started with
-//! the user's login.
+//! Starting with Windows, and making sure only one Jenova runs.
 //!
-//! `jenova --background` runs headless. Only one background copy runs at a
-//! time (it holds `jenova_watcher.lock`). While the Jenova window is open
-//! (it holds `jenova_gui.lock`) the background copy pauses so folders aren't
-//! watched twice, and it resumes when the window closes. It re-reads the
-//! settings file, so changes made in the window apply to it, and it exits
-//! on its own once "Run in background" is switched off.
+//! `jenova --tray` starts hidden in the tray (that's what the startup entry
+//! runs). Older versions ran a separate `--background` copy next to the
+//! window; that copy is stopped on launch and the flag now means `--tray`.
 
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
-use crate::scan_history::ScanHistory;
 use crate::settings::Settings;
-use crate::watch::{WatchService, WatchTarget};
-use crate::{info, warn};
+#[allow(unused_imports)]
+use crate::warn;
 
-pub const BACKGROUND_ARG: &str = "--background";
-const GUI_LOCK: &str = "jenova_gui.lock";
-const WATCHER_LOCK: &str = "jenova_watcher.lock";
-const POLL: Duration = Duration::from_secs(2);
-const DEPENDENCY_RETRY: Duration = Duration::from_secs(60);
+pub const TRAY_ARG: &str = "--tray";
+/// What older versions' startup entry passes.
+pub const LEGACY_BACKGROUND_ARG: &str = "--background";
+const INSTANCE_LOCK: &str = "jenova_app.lock";
+/// Held by older versions' background copy.
+const LEGACY_WATCHER_LOCK: &str = "jenova_watcher.lock";
+const LEGACY_GUI_LOCK: &str = "jenova_gui.lock";
 
 /// Folder that holds the lock files (same place as the settings file).
 fn state_dir() -> PathBuf {
@@ -61,10 +57,11 @@ fn lock_held(name: &str) -> bool {
     }
 }
 
-/// Held by the window for its whole lifetime. `wait` keeps trying for a
-/// while (used right after an update, while the old window closes).
-pub fn hold_gui_lock(wait: Duration) -> Option<File> {
-    let file = open_lock(GUI_LOCK)?;
+/// Held for the app's whole lifetime so a second copy can tell. `wait`
+/// keeps trying for a while (right after an update, while the old copy
+/// closes).
+pub fn hold_instance_lock(wait: Duration) -> Option<File> {
+    let file = open_lock(INSTANCE_LOCK)?;
     let deadline = Instant::now() + wait;
     loop {
         if file.try_lock().is_ok() {
@@ -77,37 +74,25 @@ pub fn hold_gui_lock(wait: Duration) -> Option<File> {
     }
 }
 
-/// Whether a background watcher is running.
-pub fn background_running() -> bool {
-    lock_held(WATCHER_LOCK)
-}
-
-fn gui_running() -> bool {
-    lock_held(GUI_LOCK)
-}
-
-/// Start a detached background watcher (it exits at once if one is running).
-pub fn spawn_background() -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let mut command = std::process::Command::new(exe);
-    command
-        .arg(BACKGROUND_ARG)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+/// Stop the separate background copy older versions ran, and tidy its
+/// lock files.
+pub fn stop_legacy_background() {
+    if lock_held(LEGACY_WATCHER_LOCK) {
+        stop_processes_with_arg(LEGACY_BACKGROUND_ARG);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while lock_held(LEGACY_WATCHER_LOCK) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(200));
+        }
     }
-    command.spawn().map(|_| ()).map_err(|e| e.to_string())
+    for name in [LEGACY_WATCHER_LOCK, LEGACY_GUI_LOCK] {
+        if !lock_held(name) {
+            let _ = std::fs::remove_file(state_dir().join(name));
+        }
+    }
 }
 
-/// Stop every background Jenova process, whichever folder it runs from.
-/// Blocks until they're gone (or a few seconds pass).
-pub fn stop_all_background() {
+/// End other Jenova processes started with `arg`.
+fn stop_processes_with_arg(arg: &str) {
     let me = std::process::id();
     #[cfg(windows)]
     {
@@ -115,7 +100,7 @@ pub fn stop_all_background() {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let script = format!(
             "Get-CimInstance Win32_Process -Filter \"Name LIKE 'jenova%.exe'\" | \
-             Where-Object {{ $_.CommandLine -like '*{BACKGROUND_ARG}*' -and $_.ProcessId -ne {me} }} | \
+             Where-Object {{ $_.CommandLine -like '*{arg}*' -and $_.ProcessId -ne {me} }} | \
              ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
         );
         let result = std::process::Command::new("powershell")
@@ -126,157 +111,38 @@ pub fn stop_all_background() {
             .stderr(std::process::Stdio::null())
             .status();
         if let Err(error) = result {
-            warn!("Could not stop background watchers: {error}");
+            warn!("Could not stop the old background copy: {error}");
         }
     }
     #[cfg(unix)]
     {
-        if let Ok(entries) = std::fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
-                    continue;
-                };
-                if pid == me {
-                    continue;
-                }
-                let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
-                    continue;
-                };
-                let args: Vec<String> = cmdline
-                    .split(|b| *b == 0)
-                    .map(|a| String::from_utf8_lossy(a).into_owned())
-                    .collect();
-                let is_jenova = args.first().is_some_and(|exe| {
-                    Path::new(exe)
-                        .file_name()
-                        .is_some_and(|n| n.to_string_lossy().starts_with("jenova"))
-                });
-                if is_jenova && args.iter().any(|a| a == BACKGROUND_ARG) {
-                    let _ = std::process::Command::new("kill")
-                        .arg(pid.to_string())
-                        .status();
-                }
-            }
-        }
-    }
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while background_running() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(200));
-    }
-}
-
-/// After switching off: wait for the background copy to exit, then delete
-/// its lock file so nothing is left behind.
-pub fn cleanup_after_stop() {
-    std::thread::spawn(|| {
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while background_running() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        if !background_running() {
-            let _ = std::fs::remove_file(state_dir().join(WATCHER_LOCK));
-        }
-    });
-}
-
-fn settings_modified() -> Option<SystemTime> {
-    Settings::get_path()
-        .ok()
-        .and_then(|path| std::fs::metadata(path).ok())
-        .and_then(|meta| meta.modified().ok())
-}
-
-fn watch_target(settings: &Settings) -> WatchTarget {
-    if !settings.watch_enabled {
-        return WatchTarget::default();
-    }
-    WatchTarget {
-        folders: settings
-            .watch_folders
-            .iter()
-            .map(PathBuf::from)
-            .filter(|path| path.is_dir())
-            .collect(),
-        polling: settings.watch_polling,
-        poll_interval_secs: settings.watch_poll_interval_seconds,
-    }
-}
-
-/// Entry point for `jenova --background`. Returns when the mode is switched off.
-pub fn run() {
-    let Some(lock) = open_lock(WATCHER_LOCK) else {
-        warn!("Background: cannot open lock file; exiting");
-        return;
-    };
-    if lock.try_lock().is_err() {
-        info!("Background: another background watcher is already running; exiting");
-        return;
-    }
-    info!("Background watcher started");
-
-    let history = Arc::new(Mutex::new(ScanHistory::load()));
-    let mut service = WatchService::new(Arc::clone(&history));
-    let mut settings = Settings::load();
-    let mut settings_mtime = settings_modified();
-    let mut command = None;
-    let mut last_probe: Option<Instant> = None;
-    let mut paused_for_gui = false;
-    crate::notifications::IN_APP_ENABLED.store(false, std::sync::atomic::Ordering::Relaxed);
-
-    loop {
-        // Pick up changes made in the window.
-        let mtime = settings_modified();
-        if mtime != settings_mtime {
-            settings_mtime = mtime;
-            settings = Settings::load();
-            info!("Background: settings reloaded");
-        }
-        if !settings.background_service {
-            info!("Background mode switched off; exiting");
-            break;
-        }
-        crate::notifications::DESKTOP_ENABLED.store(
-            settings.notify_desktop,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-
-        if command.is_none() && last_probe.is_none_or(|t| t.elapsed() >= DEPENDENCY_RETRY) {
-            last_probe = Some(Instant::now());
-            command = crate::app::probe_startup_dependencies().subliminal_command;
-            if command.is_none() {
-                warn!(
-                    "Background: Subliminal not found; open Jenova to install it. Retrying in 60s"
-                );
-            }
-        }
-
-        let gui = gui_running();
-        if gui != paused_for_gui {
-            paused_for_gui = gui;
-            info!(
-                "Background: {}",
-                if gui {
-                    "Jenova window opened, pausing"
-                } else {
-                    "Jenova window closed, resuming"
-                }
-            );
-        }
-        let target = if gui || command.is_none() {
-            WatchTarget::default()
-        } else {
-            watch_target(&settings)
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return;
         };
-        service.update_runtime(settings.clone(), command.clone());
-        service.apply(target, settings.watch_catch_up);
-
-        std::thread::sleep(POLL);
+        for entry in entries.flatten() {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            if pid == me {
+                continue;
+            }
+            let Ok(cmdline) = std::fs::read(entry.path().join("cmdline")) else {
+                continue;
+            };
+            let args: Vec<String> = cmdline
+                .split(|b| *b == 0)
+                .map(|a| String::from_utf8_lossy(a).into_owned())
+                .collect();
+            let is_jenova = args.first().is_some_and(|exe| {
+                Path::new(exe)
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("jenova"))
+            });
+            if is_jenova && args.iter().any(|a| a == arg) {
+                let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
+            }
+        }
     }
-
-    service.shutdown();
-    let _ = lock.unlock();
-    drop(lock);
-    let _ = std::fs::remove_file(state_dir().join(WATCHER_LOCK));
 }
 
 /// Start-with-login registration.
@@ -293,7 +159,7 @@ pub mod startup {
 
     fn command_line() -> Result<String, String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        Ok(format!("\"{}\" {}", exe.display(), super::BACKGROUND_ARG))
+        Ok(format!("\"{}\" {}", exe.display(), super::TRAY_ARG))
     }
 
     /// Register (or refresh) the startup entry for the current exe path.
@@ -321,14 +187,6 @@ pub mod startup {
         }
     }
 
-    #[cfg(windows)]
-    pub fn is_registered() -> bool {
-        use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
-        winreg::RegKey::predef(HKEY_CURRENT_USER)
-            .open_subkey_with_flags(RUN_KEY, KEY_READ)
-            .and_then(|key| key.get_value::<String, _>(VALUE))
-            .is_ok()
-    }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     fn autostart_file() -> Option<std::path::PathBuf> {
@@ -342,7 +200,7 @@ pub mod startup {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let entry = format!(
-            "[Desktop Entry]\nType=Application\nName=Jenova (background)\nExec={}\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",
+            "[Desktop Entry]\nType=Application\nName=Jenova\nExec={}\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",
             command_line()?
         );
         std::fs::write(path, entry).map_err(|e| e.to_string())
@@ -356,10 +214,6 @@ pub mod startup {
         }
     }
 
-    #[cfg(all(unix, not(target_os = "macos")))]
-    pub fn is_registered() -> bool {
-        autostart_file().is_some_and(|path| path.exists())
-    }
 
     #[cfg(target_os = "macos")]
     pub fn register() -> Result<(), String> {
@@ -371,8 +225,4 @@ pub mod startup {
         Ok(())
     }
 
-    #[cfg(target_os = "macos")]
-    pub fn is_registered() -> bool {
-        false
-    }
 }

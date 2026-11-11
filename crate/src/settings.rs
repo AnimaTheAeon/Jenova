@@ -51,10 +51,11 @@ pub struct Settings {
     pub watch_poll_interval_seconds: u64,
     #[serde(default = "default_true")]
     pub watch_options_open: bool,
+    /// Notify when subtitles are found: a pop-up inside Jenova while its
+    /// window is open, a Windows notification otherwise.
     #[serde(default = "default_true")]
     pub notify_desktop: bool,
-    #[serde(default = "default_true")]
-    pub notify_in_app: bool,
+    /// Start Jenova (hidden in the tray) when you sign in.
     #[serde(default)]
     pub background_service: bool,
     #[serde(default = "default_true")]
@@ -139,7 +140,6 @@ impl Default for Settings {
             watch_poll_interval_seconds: default_poll_interval(),
             watch_options_open: true,
             notify_desktop: true,
-            notify_in_app: true,
             background_service: false,
             check_updates: true,
             theme: default_theme(),
@@ -166,9 +166,11 @@ impl Settings {
             .retain(|provider| PROVIDERS.contains(&provider.as_str()));
         self.refiners
             .retain(|refiner| REFINERS.contains(&refiner.as_str()));
-        if !(1..=MAX_CONCURRENT_DOWNLOADS).contains(&self.concurrent_downloads) {
+        if self.concurrent_downloads == 0 {
             self.concurrent_downloads = DEFAULT_CONCURRENT_DOWNLOADS;
         }
+        // Older versions allowed up to 100 (default 25), enough to get banned.
+        self.concurrent_downloads = self.concurrent_downloads.min(MAX_CONCURRENT_DOWNLOADS);
         if self.minimum_score > 100 {
             self.minimum_score = 0;
         }
@@ -189,11 +191,11 @@ impl Settings {
     pub fn credentials_storage_blurb() -> &'static str {
         #[cfg(windows)]
         {
-            "Stored locally in %APPDATA%\\Jenova\\jenova_settings.json and synced to subliminal.toml for Subliminal. No key is baked into the app."
+            "The password is kept in Windows Credential Manager and only handed to Subliminal while it runs. No key is baked into the app."
         }
         #[cfg(not(windows))]
         {
-            "Stored locally in settings.json in your jenova config folder (XDG on Linux/macOS) and synced to subliminal.toml for Subliminal. No key is baked into the app."
+            "Stored in Jenova's settings file and only handed to Subliminal while it runs. No key is baked into the app."
         }
     }
 
@@ -231,8 +233,23 @@ impl Settings {
         match Self::get_path() {
             Ok(path) => match std::fs::read_to_string(&path) {
                 Ok(content) => match serde_json::from_str::<Settings>(&content) {
-                    Ok(settings) => {
+                    Ok(mut settings) => {
                         crate::info!("Settings loaded from {}", path.display());
+                        // Move a password saved by an older version into
+                        // Credential Manager.
+                        if !crate::credentials::stored_in_settings()
+                            && !settings.opensubtitlescom_password.is_empty()
+                        {
+                            let password = std::mem::take(&mut settings.opensubtitlescom_password);
+                            match crate::credentials::save_password(&password) {
+                                Ok(()) => {
+                                    let _ = settings.save();
+                                }
+                                Err(error) => {
+                                    crate::warn!("{error}");
+                                }
+                            }
+                        }
                         settings.normalize()
                     }
                     Err(e) => {
@@ -260,7 +277,11 @@ impl Settings {
     /// Save settings atomically.
     pub fn save(&self) -> Result<(), String> {
         let path = Self::get_path().map_err(|e| format!("Failed to get settings path: {}", e))?;
-        let json = serde_json::to_string_pretty(self)
+        let mut copy = self.clone();
+        if !crate::credentials::stored_in_settings() {
+            copy.opensubtitlescom_password.clear();
+        }
+        let json = serde_json::to_string_pretty(&copy)
             .map_err(|e| format!("Failed to serialize settings: {}", e))?;
         crate::helper_functions::Utils::write_atomic(&path, json.as_bytes())
             .map_err(|e| format!("Failed to commit settings file: {}", e))?;
@@ -291,6 +312,11 @@ mod tests {
             normalized.concurrent_downloads,
             DEFAULT_CONCURRENT_DOWNLOADS
         );
+        let many = Settings {
+            concurrent_downloads: 25,
+            ..Settings::default()
+        };
+        assert_eq!(many.normalize().concurrent_downloads, 5);
         assert_eq!(normalized.minimum_score, 0);
     }
 

@@ -2,7 +2,7 @@ name: Build Windows
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     # Pushing a version tag builds the exe and creates the release.
     tags: ["v*"]
   pull_request:
