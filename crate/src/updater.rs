@@ -240,7 +240,11 @@ fn pick_asset(assets: &[Asset]) -> Option<Asset> {
     assets
         .iter()
         .find(|a| lower(a) == "jenova.exe")
-        .or_else(|| assets.iter().find(|a| lower(a).ends_with(".exe")))
+        .or_else(|| {
+            assets
+                .iter()
+                .find(|a| lower(a).ends_with(".exe") && !lower(a).contains("setup"))
+        })
         .or_else(|| assets.iter().find(|a| lower(a).ends_with(".zip")))
         .cloned()
 }
@@ -463,6 +467,7 @@ pub const AFTER_UPDATE_ARG: &str = "--after-update";
 /// on a later launch.
 pub fn cleanup_old_exe() {
     purge_old_versions_folder();
+    sync_installed_version();
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
@@ -470,6 +475,34 @@ pub fn cleanup_old_exe() {
         remove_leftover(&old);
     }
 }
+
+/// When Jenova was installed with Jenova-Setup.exe, keep the version shown in
+/// Settings > Apps current after in-app updates.
+#[cfg(windows)]
+fn sync_installed_version() {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
+    const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Jenova_is1";
+    let Ok(key) = winreg::RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(KEY, KEY_READ | KEY_SET_VALUE)
+    else {
+        return;
+    };
+    let (Ok(exe), Ok(location)) = (std::env::current_exe(), key.get_value::<String, _>("InstallLocation")) else {
+        return;
+    };
+    let same_folder = exe
+        .parent()
+        .is_some_and(|dir| dir.to_string_lossy().trim_end_matches('\\').eq_ignore_ascii_case(location.trim_end_matches('\\')));
+    if !same_folder {
+        return;
+    }
+    if key.get_value::<String, _>("DisplayVersion").ok().as_deref() != Some(APP_VERSION) {
+        let _ = key.set_value("DisplayVersion", &APP_VERSION.to_string());
+        let _ = key.set_value("DisplayName", &"Jenova".to_string());
+    }
+}
+
+#[cfg(not(windows))]
+fn sync_installed_version() {}
 
 fn remove_leftover(old: &Path) {
     let try_delete = |tries: u32| {
