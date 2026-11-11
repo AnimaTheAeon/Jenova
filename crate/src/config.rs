@@ -32,11 +32,12 @@ pub static EXTRAS_FOLDER_NAMES: &[&str] = &[
     "Other",
 ];
 
-/// Default concurrent downloads.
-pub static DEFAULT_CONCURRENT_DOWNLOADS: usize = 25;
+/// Default concurrent downloads. Subtitle sites rate-limit (and can ban)
+/// clients that hit them hard, so keep this low.
+pub static DEFAULT_CONCURRENT_DOWNLOADS: usize = 3;
 
 /// Maximum concurrent downloads.
-pub static MAX_CONCURRENT_DOWNLOADS: usize = 100;
+pub static MAX_CONCURRENT_DOWNLOADS: usize = 5;
 
 /// Default window size.
 pub static WINDOW_SIZE: [f32; 2] = [1120.0, 760.0];

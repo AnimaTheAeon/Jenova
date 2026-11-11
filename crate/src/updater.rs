@@ -139,8 +139,8 @@ pub fn install_in_background(
                 .ok_or("This release has no Windows download (jenova.exe or a .zip).")?;
             let bytes = download(&asset, &updater, ctx.as_ref())?;
             let exe_bytes = extract_exe(&asset.name, bytes)?;
-            // The background watcher runs the same exe; stop it first.
-            crate::background::stop_all_background();
+            // An older version's separate background copy may run this exe.
+            crate::background::stop_legacy_background();
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
             replace_exe(&exe, &exe_bytes)?;
             Ok(())
@@ -606,6 +606,8 @@ fn restart(ctx: Option<&eframe::egui::Context>) {
             .arg(AFTER_UPDATE_ARG)
             .spawn();
     }
+    // Let the window really close instead of hiding in the tray.
+    crate::tray::allow_quit();
     match ctx {
         Some(ctx) => {
             ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);

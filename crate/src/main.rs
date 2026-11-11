@@ -4,7 +4,10 @@
 mod app;
 mod background;
 mod config;
+mod credentials;
 mod data_structures;
+mod downloader;
+mod engine;
 mod ff_layout;
 mod green_layout;
 mod ff_theme;
@@ -13,9 +16,11 @@ mod helper_functions;
 mod logging;
 mod notifications;
 mod python_manager;
+mod retry;
 mod scan_history;
 mod settings;
 mod subtitle_utils;
+mod tray;
 mod updater;
 mod watch;
 
@@ -174,7 +179,7 @@ fn calculate_window_position(window_size: [f32; 2]) -> egui::Pos2 {
 }
 
 /// Configure the application window.
-fn configure_window(icon_data: Option<egui::IconData>) -> eframe::NativeOptions {
+fn configure_window(icon_data: Option<egui::IconData>, visible: bool) -> eframe::NativeOptions {
     let window_size = WINDOW_SIZE;
     let initial_position = calculate_window_position(window_size);
 
@@ -183,7 +188,8 @@ fn configure_window(icon_data: Option<egui::IconData>) -> eframe::NativeOptions 
         .with_position(initial_position)
         .with_decorations(true)
         .with_resizable(true)
-        .with_min_inner_size(MIN_WINDOW_SIZE); // Minimum window size.
+        .with_min_inner_size(MIN_WINDOW_SIZE)
+        .with_visible(visible);
 
     if let Some(icon) = icon_data {
         viewport_builder = viewport_builder.with_icon(icon);
@@ -255,51 +261,67 @@ fn main() {
     #[cfg(windows)]
     helper_functions::Utils::migrate_legacy_files();
 
-    if std::env::args().any(|arg| arg == background::BACKGROUND_ARG) {
-        logging::BACKGROUND_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
-        let _ = initialize_app();
-        background::run();
-        cleanup_on_exit();
-        return;
-    }
+    let args: Vec<String> = std::env::args().collect();
+    let has = |flag: &str| args.iter().any(|arg| arg == flag);
+    // Started with Windows: stay hidden in the tray.
+    let start_hidden = tray::available()
+        && (has(background::TRAY_ARG) || has(background::LEGACY_BACKGROUND_ARG));
+    let after_update = has(updater::AFTER_UPDATE_ARG);
 
-    // Tell a background watcher this window is open, so it pauses.
-    // After an update, wait for the old window to finish closing first.
-    let after_update = std::env::args().any(|arg| arg == updater::AFTER_UPDATE_ARG);
-    let _gui_lock = background::hold_gui_lock(if after_update {
-        std::time::Duration::from_secs(15)
-    } else {
-        std::time::Duration::ZERO
-    });
-
-    // Initialize the app.
     if let Err(e) = initialize_app() {
         eprintln!("Failed to initialize application: {}", e);
         return;
     }
 
-    // Load icon.
+    // Only one Jenova at a time: a second launch just shows the first one.
+    // After an update, wait for the old copy to finish closing.
+    let wait = if after_update {
+        std::time::Duration::from_secs(20)
+    } else {
+        std::time::Duration::ZERO
+    };
+    let Some(_instance_lock) = background::hold_instance_lock(wait) else {
+        if tray::signal_running_copy() {
+            info!("Jenova is already running; showing it");
+        } else {
+            warn!("Jenova is already running");
+        }
+        cleanup_on_exit();
+        return;
+    };
+    background::stop_legacy_background();
+
+    if start_hidden {
+        tray::set_started_hidden();
+    }
     let icon_data = load_app_icon();
-
-    // Configure window.
-    let native_options = configure_window(icon_data);
-
+    let native_options = configure_window(icon_data, !start_hidden);
     info!(
-        "Initializing GUI with window size: {}x{}",
-        WINDOW_SIZE[0], WINDOW_SIZE[1]
+        "Initializing GUI with window size: {}x{}{}",
+        WINDOW_SIZE[0],
+        WINDOW_SIZE[1],
+        if start_hidden { " (hidden in the tray)" } else { "" }
     );
 
-    // Run the application.
     let result = eframe::run_native(
         "Jenova",
         native_options,
         Box::new(|cc| {
-            // Configure visuals.
             configure_visuals(&cc.egui_ctx);
             configure_fonts(&cc.egui_ctx);
             egui_extras::install_image_loaders(&cc.egui_ctx);
+            let app = SubtitleDownloader::new(&cc.egui_ctx);
+            let engine = std::sync::Arc::clone(&app.engine);
+            tray::start(
+                cc.egui_ctx.clone(),
+                Box::new(move || {
+                    engine.shutdown();
+                    cleanup_on_exit();
+                    std::process::exit(0);
+                }),
+            );
             info!("GUI initialized successfully");
-            Ok(Box::new(SubtitleDownloader::default()))
+            Ok(Box::new(app))
         }),
     );
 

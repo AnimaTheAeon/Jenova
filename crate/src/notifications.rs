@@ -1,4 +1,5 @@
-//! "Subtitles found" notifications: desktop toasts and in-app pop-ups.
+//! "Subtitles found" notifications: a pop-up inside Jenova while its window
+//! is showing, a Windows notification while it's hidden in the tray.
 //!
 //! Download workers call [`subtitle_found`]. A background thread batches
 //! results so a big scan produces a few summary toasts rather than hundreds.
@@ -28,8 +29,8 @@ const MAX_INDIVIDUAL: usize = 3;
 pub const IN_APP_LIFETIME: Duration = Duration::from_secs(7);
 const MAX_IN_APP: usize = 3;
 
-pub static DESKTOP_ENABLED: AtomicBool = AtomicBool::new(true);
-pub static IN_APP_ENABLED: AtomicBool = AtomicBool::new(true);
+/// The "Notify me when subtitles are found" setting.
+pub static ENABLED: AtomicBool = AtomicBool::new(true);
 
 struct Found {
     video: PathBuf,
@@ -65,7 +66,7 @@ pub fn set_context(ctx: &eframe::egui::Context) {
 
 /// Report that subtitles were downloaded for `video` in `langs`.
 pub fn subtitle_found(video: &Path, langs: &[String]) {
-    if !DESKTOP_ENABLED.load(Ordering::Relaxed) && !IN_APP_ENABLED.load(Ordering::Relaxed) {
+    if !ENABLED.load(Ordering::Relaxed) {
         return;
     }
     QUEUE.lock().unwrap_or_else(|e| e.into_inner()).push(Found {
@@ -95,10 +96,6 @@ pub fn in_app_toasts() -> Vec<InAppToast> {
     list.iter().cloned().collect()
 }
 
-pub fn clear_in_app() {
-    IN_APP.lock().unwrap_or_else(|e| e.into_inner()).clear();
-}
-
 pub fn dismiss_in_app(index: usize) {
     let mut list = IN_APP.lock().unwrap_or_else(|e| e.into_inner());
     if index < list.len() {
@@ -124,7 +121,7 @@ fn run_worker(rx: std::sync::mpsc::Receiver<()>) {
             continue;
         }
         let toasts = build_toasts(&found);
-        if IN_APP_ENABLED.load(Ordering::Relaxed) {
+        if crate::tray::window_visible() {
             let mut list = IN_APP.lock().unwrap_or_else(|e| e.into_inner());
             for toast in &toasts {
                 list.push_back(InAppToast {
@@ -139,8 +136,7 @@ fn run_worker(rx: std::sync::mpsc::Receiver<()>) {
             if let Some(ctx) = CTX.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
                 ctx.request_repaint();
             }
-        }
-        if DESKTOP_ENABLED.load(Ordering::Relaxed) {
+        } else {
             for toast in &toasts {
                 show_desktop(toast);
             }

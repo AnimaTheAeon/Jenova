@@ -223,7 +223,6 @@ impl SubtitleDownloader {
         self.menu_touched = true;
         self.menu_page = page;
         self.green_in_page = true;
-        self.set_keep_dropdown_open(page == MenuPage::Language);
         self.green_reveal = Some(std::time::Instant::now());
     }
 
@@ -249,7 +248,6 @@ impl SubtitleDownloader {
     fn green_home_now(&mut self) {
         self.green_in_page = false;
         self.green_unzoom = Some(std::time::Instant::now());
-        self.set_keep_dropdown_open(false);
         let page = if self.menu_page == MenuPage::Log { MenuPage::Config } else { self.menu_page };
         if let Some(i) = MENU.iter().position(|(p, _)| *p == page) {
             self.green_cursor = i;
@@ -257,10 +255,11 @@ impl SubtitleDownloader {
     }
 
     fn green_status(&self) -> (String, String) {
-        let secs = self.app_started.elapsed().as_secs();
-        let subs = self.scan_history.lock().map(|h| h.records.len()).unwrap_or(0);
+        let shared = &self.watch.shared;
+        let queued = shared.queued.load(std::sync::atomic::Ordering::SeqCst)
+            + shared.running.load(std::sync::atomic::Ordering::SeqCst);
         (
-            format!("Time {:02}:{:02}:{:02} · {} subtitles", secs / 3600, (secs / 60) % 60, secs % 60, format_count(subs)),
+            format!("{} queued · {} found today", format_count(queued), format_count(shared.found_today())),
             self.status_line(),
         )
     }
