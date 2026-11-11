@@ -19,9 +19,17 @@ pub(crate) const MENU: &[(MenuPage, &str)] = &[
     (MenuPage::Downloads, "Downloads"),
     (MenuPage::Language, "Language"),
     (MenuPage::Matching, "Matching"),
-    (MenuPage::Config, "Config"),
-    (MenuPage::Log, "Log"),
+    (MenuPage::Config, "Settings"),
 ];
+
+/// Menu label for a page. The log isn't in the menu; it opens from Settings
+/// and counts as part of it.
+pub(crate) fn page_label(page: MenuPage) -> &'static str {
+    match page {
+        MenuPage::Log => "Log",
+        _ => MENU.iter().find(|(p, _)| *p == page).map(|(_, l)| *l).unwrap_or("Settings"),
+    }
+}
 
 impl SubtitleDownloader {
     /// Lay out every window.
@@ -58,7 +66,9 @@ impl SubtitleDownloader {
                 let response = ff::menu_item(
                     ui,
                     label,
-                    self.menu_touched && self.menu_page == *page,
+                    self.menu_touched
+                        && (self.menu_page == *page
+                            || (*page == MenuPage::Config && self.menu_page == MenuPage::Log)),
                     enabled,
                 );
                 if enabled && response.clicked() {
@@ -454,8 +464,15 @@ impl SubtitleDownloader {
 
     fn render_config_page(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ff::title(ui, "Config", 26.0, TEXT());
+            ff::title(ui, "Settings", 26.0, TEXT());
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .button(RichText::new("View Log").size(16.0))
+                    .on_hover_text("Folder watch activity")
+                    .clicked()
+                {
+                    self.menu_page = MenuPage::Log;
+                }
                 let applying = self.apply_in_progress.load(Ordering::SeqCst);
                 if ui
                     .add_enabled(
@@ -909,7 +926,16 @@ impl SubtitleDownloader {
     }
 
     fn render_log_page(&mut self, ui: &mut egui::Ui) {
-        page_title(ui, "Log", "Folder watch activity");
+        ui.horizontal(|ui| {
+            ff::title(ui, "Log", 26.0, TEXT());
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button(RichText::new("Back to Settings").size(16.0)).clicked() {
+                    self.menu_page = MenuPage::Config;
+                }
+            });
+        });
+        ui.label(RichText::new("Folder watch activity").color(TEXT_DIM()));
+        ff::divider(ui);
         let lines = self.watch.shared.log_lines();
         egui::ScrollArea::vertical()
             .id_salt("ff_log")

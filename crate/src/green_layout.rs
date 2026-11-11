@@ -13,7 +13,7 @@ use eframe::egui::{
 };
 
 use crate::data_structures::{MenuPage, SubtitleDownloader};
-use crate::ff_layout::{format_count, MENU};
+use crate::ff_layout::{format_count, page_label, MENU};
 use crate::ff_theme::{self as ff, pal};
 
 fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {
@@ -227,6 +227,15 @@ impl SubtitleDownloader {
         self.green_reveal = Some(std::time::Instant::now());
     }
 
+    /// BACK from the log returns to Settings; from anything else, home.
+    fn green_back_or_settings(&mut self) {
+        if self.menu_page == MenuPage::Log {
+            self.menu_page = MenuPage::Config;
+        } else {
+            self.green_back();
+        }
+    }
+
     /// BACK: the page first sinks into the orb's glow.
     fn green_back(&mut self) {
         if self.green_leave.is_none() {
@@ -241,7 +250,8 @@ impl SubtitleDownloader {
         self.green_in_page = false;
         self.green_unzoom = Some(std::time::Instant::now());
         self.set_keep_dropdown_open(false);
-        if let Some(i) = MENU.iter().position(|(p, _)| *p == self.menu_page) {
+        let page = if self.menu_page == MenuPage::Log { MenuPage::Config } else { self.menu_page };
+        if let Some(i) = MENU.iter().position(|(p, _)| *p == page) {
             self.green_cursor = i;
         }
     }
@@ -395,9 +405,9 @@ impl SubtitleDownloader {
         let esc = !typing && ui.input(|i| i.key_pressed(Key::Escape));
         let mouse_back = ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1));
         if deps_ready && (esc || mouse_back) {
-            self.green_back();
+            self.green_back_or_settings();
         }
-        let label = MENU.iter().find(|(p, _)| *p == self.menu_page).map(|(_, l)| *l).unwrap_or("Config");
+        let label = page_label(self.menu_page);
 
         // Slanted title bar.
         let bar = Rect::from_min_size(full.min, Vec2::new((full.width() * 0.42).clamp(300.0, 520.0), 56.0));
@@ -427,7 +437,7 @@ impl SubtitleDownloader {
         ff::set_hide_headings(false);
 
         if deps_ready && hint(ui, pos2(full.right() - 190.0, full.bottom() - 30.0), "ESC", "BACK").clicked() {
-            self.green_back();
+            self.green_back_or_settings();
         }
     }
 }
