@@ -69,6 +69,12 @@ pub fn is_blades() -> bool {
     theme() == Theme::Blades
 }
 
+/// Inner margin for text boxes. Blades rounds them like pills, so the text
+/// needs room to clear the curved ends (egui's default is 4 x 2).
+pub fn input_margin() -> egui::Margin {
+    if is_blades() { egui::Margin::symmetric(12, 4) } else { egui::Margin::symmetric(4, 2) }
+}
+
 pub fn is_green() -> bool {
     theme() == Theme::GreenDash
 }
@@ -279,6 +285,7 @@ pub fn apply_style(ctx: &egui::Context) {
         visuals.widgets.active = w(110, 255);
         visuals.widgets.open = w(60, 200);
     }
+    let blades_pad = is_blades();
 
     ctx.set_theme(egui::Theme::Dark);
     ctx.set_visuals_of(egui::Theme::Dark, visuals);
@@ -293,7 +300,8 @@ pub fn apply_style(ctx: &egui::Context) {
         ]
         .into();
         style.spacing.item_spacing = Vec2::new(8.0, 6.0);
-        style.spacing.button_padding = Vec2::new(10.0, 4.0);
+        // Blades: pill buttons need more room at the rounded ends.
+        style.spacing.button_padding = if blades_pad { Vec2::new(14.0, 5.0) } else { Vec2::new(10.0, 4.0) };
         style.spacing.interact_size.y = 24.0;
         style.spacing.scroll.floating = false;
         style.spacing.scroll.bar_width = 8.0;
