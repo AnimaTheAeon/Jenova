@@ -472,7 +472,7 @@ impl SubtitleDownloader {
 
             ff::stat_label(ui, "LOOK");
             ui.horizontal(|ui| {
-                for theme in [ff::Theme::FfMenu, ff::Theme::GreenDash] {
+                for theme in [ff::Theme::FfMenu, ff::Theme::GreenDash, ff::Theme::Blades] {
                     let selected = self.theme == theme;
                     let text = if selected {
                         RichText::new(theme.label()).strong().color(ff::pal().on_accent)

@@ -3,6 +3,8 @@
 // Application modules
 mod app;
 mod background;
+mod blades;
+mod blades_layout;
 mod config;
 mod credentials;
 mod data_structures;
