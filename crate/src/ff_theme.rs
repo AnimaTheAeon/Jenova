@@ -16,12 +16,15 @@ pub enum Theme {
     FfMenu,
     /// Green console dashboard (glowing grid, jelly orb, slanted tabs).
     GreenDash,
+    /// Glossy silver blades; the open one wears its page's color.
+    Blades,
 }
 
 impl Theme {
     pub fn from_key(key: &str) -> Self {
         match key {
             "green" => Theme::GreenDash,
+            "blades" => Theme::Blades,
             _ => Theme::FfMenu,
         }
     }
@@ -29,12 +32,14 @@ impl Theme {
         match self {
             Theme::FfMenu => "ff",
             Theme::GreenDash => "green",
+            Theme::Blades => "blades",
         }
     }
     pub fn label(self) -> &'static str {
         match self {
             Theme::FfMenu => "FFVII menu",
             Theme::GreenDash => "Box of X",
+            Theme::Blades => "Blades",
         }
     }
 }
@@ -53,7 +58,15 @@ pub fn set_theme(theme: Theme) {
 }
 
 pub fn theme() -> Theme {
-    if THEME.load(Ordering::Relaxed) == 1 { Theme::GreenDash } else { Theme::FfMenu }
+    match THEME.load(Ordering::Relaxed) {
+        1 => Theme::GreenDash,
+        2 => Theme::Blades,
+        _ => Theme::FfMenu,
+    }
+}
+
+pub fn is_blades() -> bool {
+    theme() == Theme::Blades
 }
 
 pub fn is_green() -> bool {
@@ -129,8 +142,35 @@ pub const GREEN_PALETTE: Palette = Palette {
     on_accent: Color32::from_rgb(28, 53, 4),
 };
 
+/// Blades: white text and see-through glass on the open blade's color.
+pub const BLADES_PALETTE: Palette = Palette {
+    win_tl: Color32::from_rgba_premultiplied(30, 30, 30, 30),
+    win_tr: Color32::from_rgba_premultiplied(20, 20, 20, 20),
+    win_bl: Color32::from_rgba_premultiplied(18, 18, 18, 18),
+    win_br: Color32::from_rgba_premultiplied(10, 10, 10, 10),
+    border_light: Color32::from_rgb(255, 255, 255),
+    border_mid: Color32::from_rgb(222, 226, 236),
+    border_dark: Color32::from_rgb(40, 40, 60),
+    text: Color32::from_rgb(255, 255, 255),
+    text_dim: Color32::from_rgb(228, 232, 242),
+    shadow: Color32::from_rgba_premultiplied(0, 0, 0, 70),
+    label: Color32::from_rgb(238, 242, 255),
+    good: Color32::from_rgb(214, 255, 196),
+    warn: Color32::from_rgb(255, 238, 160),
+    bad: Color32::from_rgb(255, 204, 194),
+    backdrop: Color32::from_rgb(207, 207, 207),
+    bar_from: Color32::from_rgb(255, 255, 255),
+    bar_to: Color32::from_rgb(226, 255, 206),
+    accent: Color32::from_rgba_premultiplied(96, 96, 96, 96),
+    on_accent: Color32::WHITE,
+};
+
 pub fn pal() -> &'static Palette {
-    if is_green() { &GREEN_PALETTE } else { &FF_PALETTE }
+    match theme() {
+        Theme::GreenDash => &GREEN_PALETTE,
+        Theme::Blades => &BLADES_PALETTE,
+        Theme::FfMenu => &FF_PALETTE,
+    }
 }
 
 macro_rules! palette_fns {
@@ -212,6 +252,32 @@ pub fn apply_style(ctx: &egui::Context) {
         ] {
             w.corner_radius = CornerRadius::same(1);
         }
+    }
+
+    if is_blades() {
+        // Glass: see-through white on the blade's color, rounded like pills.
+        let glass = |a: u8| Color32::from_rgba_unmultiplied(255, 255, 255, a);
+        visuals.window_fill = Color32::from_rgb(58, 52, 78);
+        visuals.window_stroke = Stroke::new(1.5, glass(160));
+        visuals.window_corner_radius = CornerRadius::same(18);
+        visuals.extreme_bg_color = Color32::from_rgba_unmultiplied(0, 0, 0, 60);
+        visuals.faint_bg_color = glass(12);
+        visuals.code_bg_color = Color32::from_rgba_unmultiplied(0, 0, 0, 60);
+        visuals.selection.bg_fill = glass(80);
+        visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+        let w = |bg: u8, stroke: u8| egui::style::WidgetVisuals {
+            bg_fill: glass(bg),
+            weak_bg_fill: glass(bg),
+            bg_stroke: Stroke::new(1.0, glass(stroke)),
+            corner_radius: CornerRadius::same(12),
+            fg_stroke: Stroke::new(1.5, Color32::WHITE),
+            expansion: 0.0,
+        };
+        visuals.widgets.noninteractive = w(18, 70);
+        visuals.widgets.inactive = w(40, 130);
+        visuals.widgets.hovered = w(72, 210);
+        visuals.widgets.active = w(110, 255);
+        visuals.widgets.open = w(60, 200);
     }
 
     ctx.set_theme(egui::Theme::Dark);
@@ -323,6 +389,18 @@ fn green_window_shapes(rect: Rect) -> Vec<Shape> {
 pub fn window_shapes(rect: Rect) -> Vec<Shape> {
     if is_green() {
         return green_window_shapes(rect);
+    }
+    if is_blades() {
+        // A pane of glass: faint white, a thin light rim and a bright top edge.
+        let radius = CornerRadius::same(18);
+        return vec![
+            Shape::rect_filled(rect, radius, Color32::from_rgba_unmultiplied(255, 255, 255, 22)),
+            Shape::rect_stroke(rect, radius, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 90)), StrokeKind::Inside),
+            Shape::line_segment(
+                [Pos2::new(rect.left() + 18.0, rect.top() + 1.0), Pos2::new(rect.right() - 18.0, rect.top() + 1.0)],
+                Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 150)),
+            ),
+        ];
     }
     let r = WINDOW_RADIUS as f32;
     let mut mesh = egui::Mesh::default();
@@ -560,11 +638,17 @@ pub fn stat_bar(ui: &mut Ui, fraction: f32, width: f32, from: Color32, to: Color
     painter.rect_filled(
         rect.expand(1.0),
         CornerRadius::same(2),
-        if is_green() { Color32::from_rgb(0, 14, 0) } else { Color32::from_rgb(10, 10, 30) },
+        if is_green() {
+            Color32::from_rgb(0, 14, 0)
+        } else if is_blades() {
+            Color32::from_rgba_unmultiplied(0, 0, 0, 70)
+        } else {
+            Color32::from_rgb(10, 10, 30)
+        },
     );
     let fraction = fraction.clamp(0.0, 1.0);
     // The green theme keeps every bar lime, whatever the caller asked for.
-    let (from, to) = if is_green() { (pal().bar_from, pal().bar_to) } else { (from, to) };
+    let (from, to) = if is_green() || (is_blades() && from.b() > from.g()) { (pal().bar_from, pal().bar_to) } else { (from, to) };
     if fraction > 0.0 {
         let fill = Rect::from_min_size(rect.min, Vec2::new(rect.width() * fraction, rect.height()));
         let mut mesh = egui::Mesh::default();
@@ -594,6 +678,8 @@ pub fn divider(ui: &mut Ui) {
         [Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)],
         if is_green() {
             Stroke::new(1.0, Color32::from_rgba_unmultiplied(150, 255, 70, 50))
+        } else if is_blades() {
+            Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60))
         } else {
             Stroke::new(1.0, Color32::from_rgba_premultiplied(150, 160, 220, 90))
         },

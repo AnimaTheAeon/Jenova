@@ -2,6 +2,8 @@
 
 pub mod app;
 pub mod background;
+pub mod blades;
+pub mod blades_layout;
 pub mod config;
 pub mod credentials;
 pub mod data_structures;
