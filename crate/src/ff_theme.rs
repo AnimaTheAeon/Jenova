@@ -756,3 +756,78 @@ pub fn paint_orb(painter: &egui::Painter, center: Pos2, r: f32, lit: bool, wobbl
         (1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 0)),
     ]);
 }
+
+/// The update progress bar: a rounded, glossy bar in the theme's colors with
+/// the current step on the left and the percentage on the right.
+pub fn update_progress(ui: &mut Ui, fraction: f32, step: &str) {
+    let fraction = fraction.clamp(0.0, 1.0);
+    let width = ui.available_width().clamp(240.0, 520.0);
+    let h = if is_blades() { 16.0 } else { 14.0 };
+    ui.add_space(4.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, h), Sense::hover());
+    let painter = ui.painter();
+    let (radius, track, edge, from, to) = if is_green() {
+        (0u8, Color32::from_rgb(0, 14, 0), Color32::from_rgb(12, 52, 6), Color32::from_rgb(79, 181, 26), Color32::from_rgb(226, 255, 106))
+    } else if is_blades() {
+        (
+            (h / 2.0) as u8,
+            Color32::from_rgba_unmultiplied(0, 0, 0, 80),
+            Color32::from_rgba_unmultiplied(255, 255, 255, 110),
+            Color32::from_rgb(214, 222, 230),
+            Color32::WHITE,
+        )
+    } else {
+        ((h / 2.0) as u8, Color32::from_rgb(8, 12, 52), Color32::from_rgb(44, 46, 70), Color32::from_rgb(30, 110, 230), Color32::from_rgb(140, 230, 255))
+    };
+    painter.rect(rect, CornerRadius::same(radius), track, Stroke::new(1.0, edge), StrokeKind::Outside);
+    if fraction > 0.0 {
+        let w = (rect.width() * fraction).max(h);
+        let fill = Rect::from_min_size(rect.min, Vec2::new(w, h));
+        // Rounded ends in solid color, with a left-to-right gradient mesh
+        // between them; the colors meet exactly, so there are no seams.
+        let r = radius as f32;
+        painter.rect_filled(fill, CornerRadius::same(radius), from);
+        if fill.width() > 2.0 * r + 1.0 {
+            let right_cap = Rect::from_x_y_ranges((fill.right() - 2.0 * r)..=fill.right(), fill.y_range());
+            painter.rect_filled(right_cap, CornerRadius::same(radius), to);
+            let (x0, x1) = (fill.left() + r, fill.right() - r);
+            let mut mesh = egui::Mesh::default();
+            mesh.colored_vertex(egui::pos2(x0, fill.top()), from);
+            mesh.colored_vertex(egui::pos2(x1, fill.top()), to);
+            mesh.colored_vertex(egui::pos2(x1, fill.bottom()), to);
+            mesh.colored_vertex(egui::pos2(x0, fill.bottom()), from);
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            painter.add(Shape::mesh(mesh));
+        }
+        // Gloss on the top half.
+        let gloss = Rect::from_min_max(fill.min + Vec2::new(2.0, 1.5), egui::pos2(fill.right() - 2.0, fill.center().y));
+        if gloss.width() > 2.0 {
+            let gr = if radius == 0 { 0 } else { (radius / 2).max(1) };
+            painter.rect_filled(gloss, CornerRadius::same(gr), Color32::from_rgba_unmultiplied(255, 255, 255, 60));
+        }
+    }
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.set_width(width);
+        ui.label(egui::RichText::new(step).color(TEXT()));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(egui::RichText::new(format!("{}%", (fraction * 100.0).round() as u32)).strong().color(TEXT()));
+        });
+    });
+}
+
+/// Blades windows are see-through glass; a dialog gets a dark backing so
+/// whatever is behind it doesn't show through its text. Other themes are
+/// already solid.
+pub fn solid_backing<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    if !is_blades() {
+        return add_contents(ui);
+    }
+    egui::Frame::NONE
+        .fill(Color32::from_rgba_unmultiplied(28, 24, 40, 235))
+        .corner_radius(CornerRadius::same(18))
+        .shadow(egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(100) })
+        .show(ui, add_contents)
+        .inner
+}

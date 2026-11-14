@@ -96,6 +96,15 @@ pub fn in_app_toasts() -> Vec<InAppToast> {
     list.iter().cloned().collect()
 }
 
+/// Shows a pop-up inside the window.
+pub fn in_app(title: &str, body: &str) {
+    let mut list = IN_APP.lock().unwrap_or_else(|e| e.into_inner());
+    list.push_back(InAppToast { toast: Toast { title: title.into(), body: body.into() }, shown_at: Instant::now() });
+    while list.len() > MAX_IN_APP {
+        list.pop_front();
+    }
+}
+
 pub fn dismiss_in_app(index: usize) {
     let mut list = IN_APP.lock().unwrap_or_else(|e| e.into_inner());
     if index < list.len() {

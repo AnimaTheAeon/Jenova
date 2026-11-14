@@ -68,6 +68,8 @@ pub struct Updater {
     pub dismissed: std::sync::atomic::AtomicBool,
     /// The check was started by the user (show "up to date" / errors).
     pub manual: std::sync::atomic::AtomicBool,
+    /// When the update was swapped in, for the last step of the progress bar.
+    pub installed_at: Mutex<Option<std::time::Instant>>,
 }
 
 impl Updater {
@@ -148,11 +150,15 @@ pub fn install_in_background(
         match result {
             Ok(()) => {
                 info!("Updated to v{}; restarting", release.version);
+                if let Some(path) = marker_path() {
+                    let _ = std::fs::write(path, &release.version);
+                }
+                *updater.installed_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(std::time::Instant::now());
                 updater.set(UpdateState::Installed);
                 if let Some(ctx) = ctx.as_ref() {
                     ctx.request_repaint();
                 }
-                std::thread::sleep(Duration::from_millis(800));
+                std::thread::sleep(Duration::from_millis(1500));
                 restart(ctx.as_ref());
             }
             Err(error) => {
@@ -734,4 +740,25 @@ mod tests {
         assert_eq!(std::fs::read(old_path(&exe)).unwrap(), b"old version");
         assert!(!exe.with_extension("new").exists());
     }
+}
+
+/// After a restart: says whether the update that was being installed made it.
+pub fn take_update_result() -> Option<(bool, String)> {
+    let path = marker_path()?;
+    let target = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    let target = target.trim().to_string();
+    if target.is_empty() {
+        None
+    } else if target == APP_VERSION {
+        Some((true, format!("Jenova updated to v{target}.")))
+    } else {
+        Some((false, format!("The update to v{target} didn't finish. You're still on v{APP_VERSION}; you can try again from Settings.")))
+    }
+}
+
+fn marker_path() -> Option<PathBuf> {
+    let dir = dirs::config_dir()?.join("Jenova");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("updating-to"))
 }

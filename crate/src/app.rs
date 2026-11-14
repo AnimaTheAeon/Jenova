@@ -197,6 +197,9 @@ impl SubtitleDownloader {
         let engine = crate::engine::Engine::start(Arc::clone(&scan_history));
         engine.watch.set_repaint_context(ctx);
         crate::notifications::set_context(ctx);
+        if let Some((ok, msg)) = crate::updater::take_update_result() {
+            crate::notifications::in_app(if ok { "Update installed" } else { "Update didn't finish" }, &msg);
+        }
 
         // Check dependencies in the background; the engine gets Subliminal
         // straight away even if the window stays hidden.

@@ -135,13 +135,15 @@ impl SubtitleDownloader {
                 .show(ctx, |ui| {
                     ui.set_opacity(fade);
                     ui.set_max_width(340.0);
-                    ff::window(ui, |ui| {
-                        ui.set_width(300.0);
-                        ff::title(ui, &item.toast.title, 15.0, LABEL());
-                        ui.add(
-                            egui::Label::new(RichText::new(&item.toast.body).color(TEXT()).strong())
-                                .wrap(),
-                        );
+                    ff::solid_backing(ui, |ui| {
+                        ff::window(ui, |ui| {
+                            ui.set_width(300.0);
+                            ff::title(ui, &item.toast.title, 15.0, LABEL());
+                            ui.add(
+                                egui::Label::new(RichText::new(&item.toast.body).color(TEXT()).strong())
+                                    .wrap(),
+                            );
+                        })
                     })
                 });
             if area.response.interact(egui::Sense::click()).clicked() {
@@ -709,7 +711,7 @@ impl SubtitleDownloader {
             .frame(egui::Frame::NONE)
             .backdrop_color(egui::Color32::from_black_alpha(150))
             .show(ctx, |ui| {
-                ff::window(ui, |ui| {
+                ff::solid_backing(ui, |ui| ff::window(ui, |ui| {
                     ui.set_width(440.0);
                     match &state {
                         UpdateState::Available(release) => {
@@ -782,31 +784,36 @@ impl SubtitleDownloader {
                         UpdateState::Downloading { release } => {
                             ff::title(ui, &format!("Updating to v{}", release.version), 22.0, TEXT());
                             ff::divider(ui);
-                            let done = self.updater.downloaded.load(SeqCst) as f32;
-                            let total = self.updater.total.load(SeqCst).max(1) as f32;
-                            ui.horizontal(|ui| {
-                                ff::stat_label(ui, "DOWNLOAD");
-                                ff::stat_bar(
-                                    ui,
-                                    done / total,
-                                    260.0,
-                                    egui::Color32::from_rgb(200, 150, 20),
-                                    egui::Color32::from_rgb(255, 236, 140),
-                                );
-                                ui.label(
-                                    RichText::new(format!(
-                                        "{:.1} / {:.1} MB",
-                                        done / 1_048_576.0,
-                                        total / 1_048_576.0
-                                    ))
-                                    .strong(),
-                                );
-                            });
+                            let done = self.updater.downloaded.load(SeqCst);
+                            let total = self.updater.total.load(SeqCst);
+                            let frac = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+                            let step = if total > 0 {
+                                format!(
+                                    "Step 1 of 2 · Downloading {:.1} of {:.1} MB",
+                                    done as f32 / 1_048_576.0,
+                                    total as f32 / 1_048_576.0
+                                )
+                            } else {
+                                "Step 1 of 2 · Starting the download".to_string()
+                            };
+                            ff::update_progress(ui, 0.02 + 0.86 * frac, &step);
+                            ui.label(RichText::new("Jenova keeps watching your folders while it downloads.").color(TEXT_DIM()));
                             ctx.request_repaint_after(std::time::Duration::from_millis(100));
                         }
                         UpdateState::Installed => {
-                            ff::title(ui, "Update installed", 22.0, TEXT());
-                            ui.label("Restarting Jenova…");
+                            ff::title(ui, "Installing the update", 22.0, TEXT());
+                            ff::divider(ui);
+                            let t = self
+                                .updater
+                                .installed_at
+                                .lock()
+                                .ok()
+                                .and_then(|t| *t)
+                                .map(|t| t.elapsed().as_secs_f32())
+                                .unwrap_or(0.0);
+                            ff::update_progress(ui, 0.9 + 0.1 * (t / 1.5).min(1.0), "Step 2 of 2 · Restarting");
+                            ui.label(RichText::new("Jenova reopens in a moment and says when it's done.").color(TEXT_DIM()));
+                            ctx.request_repaint_after(std::time::Duration::from_millis(50));
                         }
                         UpdateState::Failed(error) => {
                             ff::title(ui, "Update failed", 22.0, ff::BAD());
@@ -819,7 +826,7 @@ impl SubtitleDownloader {
                         }
                         _ => {}
                     }
-                });
+                }));
             });
         if close {
             self.updater.manual.store(false, SeqCst);
