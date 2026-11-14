@@ -24,7 +24,7 @@ fn render_dependency_command(ui: &mut egui::Ui, label: &str, command: &str) -> b
         ui.label(label);
         let mut command_edit = command.to_string();
         ui.add(
-            egui::TextEdit::singleline(&mut command_edit)
+            egui::TextEdit::singleline(&mut command_edit).margin(crate::ff_theme::input_margin())
                 .desired_width(350.0)
                 .interactive(false)
                 .font(egui::TextStyle::Monospace)
@@ -387,7 +387,7 @@ impl SubtitleDownloader {
         };
         ui.horizontal(|ui| {
             let response = ui.add(
-                egui::TextEdit::singleline(&mut self.language_search)
+                egui::TextEdit::singleline(&mut self.language_search).margin(crate::ff_theme::input_margin())
                     .hint_text("Add a language…")
                     .desired_width(220.0),
             );
@@ -451,14 +451,14 @@ impl SubtitleDownloader {
         ui.horizontal_wrapped(|ui| {
             ui.label("Username");
             if ui
-                .add(egui::TextEdit::singleline(&mut self.opensubtitlescom_username).desired_width(140.0))
+                .add(egui::TextEdit::singleline(&mut self.opensubtitlescom_username).margin(crate::ff_theme::input_margin()).desired_width(140.0))
                 .changed()
             {
                 changed = true;
             }
             ui.label("Password");
             let response = ui.add(
-                egui::TextEdit::singleline(&mut self.opensubtitlescom_password)
+                egui::TextEdit::singleline(&mut self.opensubtitlescom_password).margin(crate::ff_theme::input_margin())
                     .password(true)
                     .desired_width(140.0),
             );
@@ -470,7 +470,7 @@ impl SubtitleDownloader {
             ui.label("API key");
             if ui
                 .add(
-                    egui::TextEdit::singleline(&mut self.opensubtitlescom_apikey)
+                    egui::TextEdit::singleline(&mut self.opensubtitlescom_apikey).margin(crate::ff_theme::input_margin())
                         .password(!self.show_opensubtitles_apikey)
                         .desired_width(260.0)
                         .hint_text("Paste from opensubtitles.com/api"),

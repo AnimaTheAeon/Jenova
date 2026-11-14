@@ -468,7 +468,8 @@ fn paint_blade(p: &Painter, g: &Geo, x0: f32, blade: &Blade, open: bool, vr: f32
         let y = g_top + (g_bot - g_top) * s as f32 / steps as f32;
         let d = ((y - mid) / gh).clamp(-1.0, 1.0);
         let k = (1.0 - d * d).max(0.0).sqrt();
-        let q = pos2(x0 + 8.5 + 15.0 * (1.0 - k), y);
+        // Follows the blade's own curve, so it never strays onto the panel to the left.
+        let q = pos2(x0 + g.arc(y) + 8.5, y);
         let f = (s as f32 / steps as f32).min(1.0 - s as f32 / steps as f32) / 0.22;
         if let Some(a) = prev {
             p.line_segment([a, q], Stroke::new(5.0 * k + 0.5, rgba(255, 255, 255, (190.0 * f.min(1.0)) as u8)));
