@@ -71,7 +71,10 @@ fn arc(y: f32, top: f32, h: f32, r: f32) -> f32 {
 }
 
 /// Fills the band between `left(y)` and `right(y)` from `top` to `bottom`,
-/// coloring each point with `color(x, y)`.
+/// Fills the band between `left(y)` and `right(y)` from `top` to `bottom`,
+/// coloring each point with `color(x, y)`. Both side edges get a 1 px fade to
+/// transparent (raw meshes aren't anti-aliased by egui), and the rows are 2 px
+/// apart so curved edges stay smooth.
 fn fill_rows(
     p: &Painter,
     top: f32,
@@ -84,19 +87,23 @@ fn fill_rows(
     if bottom <= top {
         return;
     }
-    let rows = ((bottom - top) / 6.0).ceil().max(1.0) as usize;
+    const FEATHER: f32 = 1.0;
+    let rows = ((bottom - top) / 2.0).ceil().max(1.0) as usize;
     let mut mesh = egui::Mesh::default();
     for r in 0..=rows {
         let y = top + (bottom - top) * r as f32 / rows as f32;
         let (l, rt) = (left(y), right(y).max(left(y)));
+        // Outer fringe (transparent), the band itself, outer fringe again.
+        mesh.colored_vertex(pos2(l - FEATHER, y), Color32::TRANSPARENT);
         for c in 0..=cols {
             let x = l + (rt - l) * c as f32 / cols as f32;
             mesh.colored_vertex(pos2(x, y), color(x, y));
         }
+        mesh.colored_vertex(pos2(rt + FEATHER, y), Color32::TRANSPARENT);
     }
-    let w = (cols + 1) as u32;
+    let w = (cols + 3) as u32;
     for r in 0..rows as u32 {
-        for c in 0..cols as u32 {
+        for c in 0..(cols + 2) as u32 {
             let a = r * w + c;
             mesh.add_triangle(a, a + 1, a + w + 1);
             mesh.add_triangle(a, a + w + 1, a + w);
@@ -107,7 +114,7 @@ fn fill_rows(
 
 /// A disc colored point by point (clipped to the circle).
 fn fill_disc(p: &Painter, c: Pos2, r: f32, color: impl Fn(Pos2) -> Color32) {
-    let (rings, segs) = (34u32, 80u32);
+    let (rings, segs) = (34u32, 160u32);
     let mut mesh = egui::Mesh::default();
     mesh.colored_vertex(c, color(c));
     for i in 1..=rings {
@@ -118,10 +125,15 @@ fn fill_disc(p: &Painter, c: Pos2, r: f32, color: impl Fn(Pos2) -> Color32) {
             mesh.colored_vertex(q, color(q));
         }
     }
+    // A 1 px fringe fading to transparent smooths the disc's outline.
+    for j in 0..segs {
+        let a = j as f32 / segs as f32 * std::f32::consts::TAU;
+        mesh.colored_vertex(c + Vec2::new(a.cos(), a.sin()) * (r + 1.0), Color32::TRANSPARENT);
+    }
     for j in 0..segs {
         mesh.add_triangle(0, 1 + j, 1 + (j + 1) % segs);
     }
-    for i in 1..rings {
+    for i in 1..=rings {
         let a0 = 1 + (i - 1) * segs;
         let a1 = 1 + i * segs;
         for j in 0..segs {
