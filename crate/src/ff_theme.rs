@@ -37,8 +37,8 @@ impl Theme {
     }
     pub fn label(self) -> &'static str {
         match self {
-            Theme::FfMenu => "FFVII menu",
-            Theme::GreenDash => "Box of X",
+            Theme::FfMenu => "FFVII Menu",
+            Theme::GreenDash => "Xbox",
             Theme::Blades => "Blades",
         }
     }
