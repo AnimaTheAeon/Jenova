@@ -2,7 +2,7 @@
 //! page's color. Passed blades stack on the left, coming ones on the right.
 //! Switching slides the blades (0.7 s, gentle); calmer motion turns that off.
 //! Shared drawing code, the same in every app that has the theme (first built
-//! in Lifestream). Project doc: claude/themes/blades.md.
+//! in Lifestream).
 
 #![allow(dead_code)]
 
