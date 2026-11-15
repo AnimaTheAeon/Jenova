@@ -67,9 +67,8 @@ impl SubtitleDownloader {
         self.render_page_body(&mut child);
         ff::set_hide_headings(false);
 
-        // Pop-ups and the update window, same as the other themes.
+        // Pop-ups, same as the other themes (gui.rs draws the update window).
         let ctx = ui.ctx().clone();
         self.render_in_app_toasts(&ctx, egui::pos2(f.body.right() - 14.0, f.body.top() + 14.0));
-        self.render_update_prompt(&ctx);
     }
 }

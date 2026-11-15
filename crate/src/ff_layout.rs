@@ -95,8 +95,6 @@ impl SubtitleDownloader {
             pos2(main.right() - 14.0, main.top() + 14.0),
         );
 
-        self.render_update_prompt(ui.ctx());
-
         ff::window_at(ui, main, "ff_main", |ui| self.render_page_body(ui));
     }
 

@@ -842,6 +842,10 @@ impl eframe::App for SubtitleDownloader {
                 }
             });
 
+        // Drawn here, once, for every look (a look that forgot to draw it
+        // made the Update button do nothing).
+        self.render_update_prompt(&ctx);
+
         if self.installing_python || self.installing_subliminal || self.watch.shared.busy() {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         } else {

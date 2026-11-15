@@ -335,7 +335,6 @@ impl SubtitleDownloader {
         }
 
         self.render_in_app_toasts(&ctx, pos2(full.right() - 14.0, full.top() + 80.0));
-        self.render_update_prompt(&ctx);
     }
 
     fn green_home(&mut self, ui: &mut egui::Ui, full: Rect, orb_c: Pos2, r: f32, t: f32) {
