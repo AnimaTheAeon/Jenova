@@ -51,17 +51,19 @@ fn zoom_painter(ctx: &egui::Context) -> egui::Painter {
     ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("green_zoom")))
 }
 
-/// The orb swelling toward the camera until it fills the window and flares
-/// lime (k = 0 at rest, 1 at full zoom).
+/// The dark veil pages fade through: the theme's own backdrop green. No bright
+/// flashes (the user asked for slow, gentle fades only).
+fn veil(alpha: f32) -> Color32 {
+    rgba(3, 18, 3, (alpha.clamp(0.0, 1.0) * 245.0) as u8)
+}
+
+/// Opening a page: the orb drifts a little closer while everything eases into
+/// the dark veil (k = 0 at rest, 1 when the page takes over).
 fn paint_orb_zoom(ctx: &egui::Context, full: Rect, orb_c: Pos2, r: f32, t: f32, k: f32) {
-    let e = k * k * k; // ease in: slow start, rushing at the end
-    let reach = (orb_c - full.right_bottom()).length().max((orb_c - full.right_top()).length());
-    let big = r + (reach * 1.15 - r) * e;
+    let e = k * k * (3.0 - 2.0 * k); // smoothstep
     let p = zoom_painter(ctx);
-    p.rect_filled(full.expand(20.0), 0.0, rgba(1, 10, 1, (k * 150.0) as u8));
-    paint_big_orb(&p, orb_c, big, t);
-    let glow = ((k - 0.55).max(0.0) / 0.45).powi(2);
-    p.rect_filled(full.expand(20.0), 0.0, rgba(170, 236, 60, (glow * 255.0) as u8));
+    paint_big_orb(&p, orb_c, r * (1.0 + 0.6 * e), t);
+    p.rect_filled(full.expand(20.0), 0.0, veil(e));
 }
 
 /// The big animated orb with an emblem in it.
@@ -305,7 +307,7 @@ impl SubtitleDownloader {
                 self.green_leave.map(|at| (at.elapsed().as_secs_f32() / REVEAL_SECS).min(1.0).powi(2))
             };
             if let Some(a) = glow {
-                zoom_painter(&ctx).rect_filled(full.expand(20.0), 0.0, rgba(170, 236, 60, (a * 255.0) as u8));
+                zoom_painter(&ctx).rect_filled(full.expand(20.0), 0.0, veil(a));
                 ctx.request_repaint();
             }
         } else {
@@ -437,5 +439,76 @@ impl SubtitleDownloader {
         if deps_ready && hint(ui, pos2(full.right() - 190.0, full.bottom() - 30.0), "ESC", "BACK").clicked() {
             self.green_back_or_settings();
         }
+        if deps_ready {
+            self.green_page_bar(ui, Rect::from_min_max(pos2(full.left(), full.bottom() - 46.0), pos2(full.right() - 210.0, full.bottom() - 14.0)));
+        }
+    }
+
+    /// Small tabs along the bottom of a page (never on the dashboard): jump
+    /// straight to another page without going back home.
+    fn green_page_bar(&mut self, ui: &mut egui::Ui, area: Rect) {
+        let n = MENU.len();
+        if n == 0 || area.width() < 200.0 {
+            return;
+        }
+        let gap = 6.0;
+        let w = ((area.width() - gap * (n as f32 - 1.0)) / n as f32).min(118.0);
+        if w < 60.0 {
+            return;
+        }
+        let busy = self.green_leave.is_some() || self.green_zoom.is_some();
+        let current = if self.menu_page == MenuPage::Log { MenuPage::Config } else { self.menu_page };
+        for (i, (page, label)) in MENU.iter().enumerate() {
+            let rect = Rect::from_min_size(pos2(area.left() + i as f32 * (w + gap), area.top()), Vec2::new(w, area.height()));
+            let resp = ui.interact(rect, ui.id().with(("page_bar", i)), Sense::click());
+            let lit = *page == current;
+            paint_nav_tab(ui.painter(), rect, label, lit, resp.hovered());
+            if resp.hovered() && !lit {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if resp.clicked() && !busy && *page != self.menu_page {
+                self.menu_touched = true;
+                self.menu_page = *page;
+                self.green_cursor = i;
+            }
+        }
+    }
+}
+
+fn paint_nav_tab(painter: &egui::Painter, rect: Rect, label: &str, lit: bool, hover: bool) {
+    let cut = 9.0;
+    let edge = if lit {
+        Color32::from_rgb(242, 255, 154)
+    } else if hover {
+        Color32::from_rgb(200, 255, 110)
+    } else {
+        rgba(150, 240, 70, 140)
+    };
+    painter.add(Shape::convex_polygon(ff::chamfer_points(rect, cut), edge, Stroke::NONE));
+    let inner = ff::chamfer_points(rect.shrink(1.5), cut - 0.5);
+    let (top, bottom) = if lit {
+        (Color32::from_rgb(226, 255, 106), Color32::from_rgb(140, 200, 28))
+    } else if hover {
+        (Color32::from_rgb(52, 140, 20), Color32::from_rgb(18, 70, 8))
+    } else {
+        (Color32::from_rgb(30, 96, 12), Color32::from_rgb(10, 44, 5))
+    };
+    let mut mesh = egui::Mesh::default();
+    for p in &inner {
+        let v = ((p.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
+        let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * v) as u8;
+        mesh.colored_vertex(*p, Color32::from_rgb(mix(top.r(), bottom.r()), mix(top.g(), bottom.g()), mix(top.b(), bottom.b())));
+    }
+    for i in 1..inner.len() as u32 - 1 {
+        mesh.add_triangle(0, i, i + 1);
+    }
+    painter.add(Shape::mesh(mesh));
+    let text = label.to_uppercase();
+    let font = ff::display_font(12.0);
+    if lit {
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, &text, font, pal().on_accent);
+    } else {
+        painter.text(rect.center() + Vec2::new(0.0, 1.2), egui::Align2::CENTER_CENTER, &text, font.clone(), rgba(0, 0, 0, 160));
+        painter.text(rect.center(), egui::Align2::CENTER_CENTER, &text, font, Color32::from_rgb(190, 242, 126));
     }
 }
