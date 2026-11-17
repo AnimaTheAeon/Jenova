@@ -663,7 +663,7 @@ impl SubtitleDownloader {
                     format!("You have v{}", crate::config::APP_VERSION),
                     TEXT_DIM(),
                 ),
-                UpdateState::Checking => ("Checking GitHub…".to_string(), ff::WARN()),
+                UpdateState::Checking => ("Checking for updates…".to_string(), ff::WARN()),
                 UpdateState::UpToDate => (
                     format!("You're up to date (v{})", crate::config::APP_VERSION),
                     ff::GOOD(),

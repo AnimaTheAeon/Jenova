@@ -189,12 +189,12 @@ pub fn fetch_latest() -> Result<Option<Release>, String> {
         .get(url)
         .header("Accept", "application/vnd.github+json")
         .send()
-        .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+        .map_err(|_| "Couldn't reach the update server. Check the internet connection and try again.".to_string())?;
     match response.status().as_u16() {
         200 => {}
         404 => return Err("No releases found (is the Jenova repo public?)".into()),
-        403 | 429 => return Err("GitHub rate limit reached; try again later".into()),
-        code => return Err(format!("GitHub returned HTTP {code}")),
+        403 | 429 => return Err("The update server is busy; try again later".into()),
+        code => return Err(format!("The update server answered with an error (HTTP {code}). Try again later.")),
     }
     let json: serde_json::Value = response.json().map_err(|e| e.to_string())?;
     Ok(parse_release(&json).filter(|release| is_newer(&release.version, APP_VERSION)))
@@ -310,9 +310,9 @@ fn download(
     let mut response = client()?
         .get(&asset.url)
         .send()
-        .map_err(|e| format!("Download failed: {e}"))?;
+        .map_err(|e| format!("Download failed: {}", e.without_url()))?;
     if !response.status().is_success() {
-        return Err(format!("Download failed: HTTP {}", response.status()));
+        return Err(format!("Download failed: HTTP {}", response.status().as_u16()));
     }
     let total = response.content_length().unwrap_or(asset.size);
     updater.total.store(total, Ordering::SeqCst);
@@ -321,7 +321,7 @@ fn download(
     loop {
         let n = response
             .read(&mut buf)
-            .map_err(|e| format!("Download failed: {e}"))?;
+            .map_err(|_| "Download failed: the connection dropped. Try again.".to_string())?;
         if n == 0 {
             break;
         }

@@ -1,4 +1,4 @@
-; Jenova installer (Inno Setup 6). Built by .github/workflows/build-windows.yml:
+; Jenova installer (Inno Setup 6). Built by the CI workflow:
 ;   iscc /DAppVersion=1.2.5 installer\jenova.iss
 ; Per-user install, no admin needed, so the in-app updater can replace the exe.
 
@@ -11,10 +11,7 @@ AppId=Jenova
 AppName=Jenova
 AppVersion={#AppVersion}
 AppVerName=Jenova {#AppVersion}
-AppPublisher=AnimaTheAeon
-AppPublisherURL=https://github.com/AnimaTheAeon/Jenova
-AppSupportURL=https://github.com/AnimaTheAeon/Jenova/issues
-AppUpdatesURL=https://github.com/AnimaTheAeon/Jenova/releases
+AppPublisher=Jenova
 VersionInfoVersion={#AppVersion}
 DefaultDirName={localappdata}\Programs\Jenova
 DisableProgramGroupPage=yes
