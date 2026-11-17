@@ -55,7 +55,7 @@ jobs:
             target/installer/Jenova-Setup.exe
             target/release/jenova.exe
           make_latest: true
-          generate_release_notes: true
+          generate_release_notes: false
       - uses: actions/upload-artifact@v4
         with:
           name: jenova-windows-x64
