@@ -32,6 +32,10 @@ impl SubtitleDownloader {
     /// Lay out every window.
     pub fn render_ff_layout(&mut self, ui: &mut egui::Ui) {
         let full = ui.max_rect();
+        let glass = ff::is_glass();
+        if glass {
+            ff::paint_glass_backdrop(ui.painter(), full.expand(14.0), 1.0);
+        }
         let gap = 12.0;
         let side_w = 210.0_f32.min(full.width() * 0.3);
         let bar_h = 48.0;
@@ -40,23 +44,25 @@ impl SubtitleDownloader {
             self.menu_page = MenuPage::Config;
         }
 
-        let main = Rect::from_min_max(
-            full.min,
-            pos2(full.right() - side_w - gap, full.bottom() - bar_h - gap),
-        );
+        // Liquid Glass puts the menu on the left, like an iPad app.
+        let main = if glass {
+            Rect::from_min_max(pos2(full.left() + side_w + gap, full.top()), pos2(full.right(), full.bottom() - bar_h - gap))
+        } else {
+            Rect::from_min_max(full.min, pos2(full.right() - side_w - gap, full.bottom() - bar_h - gap))
+        };
         let menu_h =
             MENU.len() as f32 * (ff::MENU_ITEM_HEIGHT + 6.0) + ff::WINDOW_PADDING as f32 * 2.0;
-        let menu = Rect::from_min_size(
-            pos2(main.right() + gap, full.top()),
-            Vec2::new(side_w, menu_h),
-        );
+        let menu_x = if glass { full.left() } else { main.right() + gap };
+        let menu = Rect::from_min_size(pos2(menu_x, full.top()), Vec2::new(side_w, menu_h));
+        let info_h = if glass { 104.0 } else { 92.0 };
         let info = Rect::from_min_max(
-            pos2(menu.left(), main.bottom() - 92.0),
-            pos2(full.right(), main.bottom()),
+            pos2(menu.left(), main.bottom() - info_h),
+            pos2(menu.right(), main.bottom()),
         );
         let bar = Rect::from_min_max(pos2(full.left(), full.bottom() - bar_h), full.max);
 
         ff::window_at(ui, menu, "ff_menu", |ui| {
+            let pill = ui.painter().add(egui::Shape::Noop);
             for (page, label) in MENU {
                 let enabled = deps_ready || *page == MenuPage::Config;
                 // No cursor on the selected item until the menu is used.
@@ -68,6 +74,11 @@ impl SubtitleDownloader {
                             || (*page == MenuPage::Config && self.menu_page == MenuPage::Log)),
                     enabled,
                 );
+                let open = self.menu_page == *page || (*page == MenuPage::Config && self.menu_page == MenuPage::Log);
+                if glass && open {
+                    // Into the slot reserved under the labels.
+                    ui.painter().set(pill, egui::Shape::Vec(ff::glass_pill(ui.ctx(), "menu", response.rect)));
+                }
                 if enabled && response.clicked() {
                     self.menu_touched = true;
                     self.menu_page = *page;
@@ -417,8 +428,7 @@ impl SubtitleDownloader {
 
             ff::stat_label(ui, "LANGUAGES");
             self.render_languages(ui);
-            changed |= ui
-                .checkbox(&mut self.exclude_hearing_impaired, "Skip hearing-impaired (SDH) subtitles")
+            changed |= ff::check(ui, &mut self.exclude_hearing_impaired, "Skip hearing-impaired (SDH) subtitles")
                 .changed();
             ff::divider(ui);
 
@@ -430,17 +440,14 @@ impl SubtitleDownloader {
                     .on_hover_text("Gives downloads and copies time to finish before Subliminal reads the file")
                     .changed();
             });
-            changed |= ui
-                .checkbox(&mut self.watch_catch_up, "Check existing files once a day")
+            changed |= ff::check(ui, &mut self.watch_catch_up, "Check existing files once a day")
                 .on_hover_text("Catches videos added while Jenova wasn't running")
                 .changed();
-            changed |= ui
-                .checkbox(&mut self.ignore_local_extras, "Skip Plex extras folders")
+            changed |= ff::check(ui, &mut self.ignore_local_extras, "Skip Plex extras folders")
                 .on_hover_text("Behind The Scenes, Deleted Scenes, Featurettes, Interviews, Scenes, Shorts, Trailers and Other")
                 .changed();
             ui.horizontal(|ui| {
-                changed |= ui
-                    .checkbox(&mut self.watch_polling, "Polling mode (NAS / network drives)")
+                changed |= ff::check(ui, &mut self.watch_polling, "Polling mode (NAS / network drives)")
                     .on_hover_text("Use this if new files on a mapped drive or network share aren't noticed")
                     .changed();
                 if self.watch_polling {
@@ -454,8 +461,7 @@ impl SubtitleDownloader {
 
             ff::stat_label(ui, "DOWNLOADS");
             self.render_concurrent_downloads(ui);
-            changed |= ui
-                .checkbox(&mut self.force_download, "Download even if the video has embedded subtitles")
+            changed |= ff::check(ui, &mut self.force_download, "Download even if the video has embedded subtitles")
                 .changed();
             ff::divider(ui);
 
@@ -464,15 +470,14 @@ impl SubtitleDownloader {
             ff::divider(ui);
 
             self.render_startup_section(ui);
-            changed |= ui
-                .checkbox(&mut self.notify_desktop, "Notify me when subtitles are found")
+            changed |= ff::check(ui, &mut self.notify_desktop, "Notify me when subtitles are found")
                 .on_hover_text("A pop-up inside Jenova while it's open, a Windows notification while it's in the tray")
                 .changed();
             ff::divider(ui);
 
             ff::stat_label(ui, "LOOK");
             ui.horizontal(|ui| {
-                for theme in [ff::Theme::FfMenu, ff::Theme::GreenDash, ff::Theme::Blades] {
+                for theme in [ff::Theme::FfMenu, ff::Theme::GreenDash, ff::Theme::Blades, ff::Theme::Glass] {
                     let selected = self.theme == theme;
                     let text = if selected {
                         RichText::new(theme.label()).strong().color(ff::pal().on_accent)
@@ -506,8 +511,7 @@ impl SubtitleDownloader {
             let advanced = egui::CollapsingHeader::new(RichText::new("Advanced").color(LABEL()).strong())
                 .open(Some(self.advanced_open))
                 .show(ui, |ui| {
-                    let mut changed = ui
-                        .checkbox(&mut self.skip_scanned_media, "Skip videos Jenova already got subtitles for")
+                    let mut changed = ff::check(ui, &mut self.skip_scanned_media, "Skip videos Jenova already got subtitles for")
                         .on_hover_text("Unless the video file changed or you added a language")
                         .changed();
                     ui.add_space(4.0);
@@ -633,11 +637,7 @@ impl SubtitleDownloader {
     fn render_updates_section(&mut self, ui: &mut egui::Ui) {
         use crate::updater::UpdateState;
         ff::stat_label(ui, "UPDATES");
-        if ui
-            .checkbox(
-                &mut self.check_updates,
-                "Check for updates when Jenova starts",
-            )
+        if ff::check(ui, &mut self.check_updates, "Check for updates when Jenova starts")
             .changed()
         {
             self.save_current_settings();
@@ -841,8 +841,7 @@ impl SubtitleDownloader {
                 "Start when you log in"
             };
             let mut enabled = self.background_service;
-            if ui
-                .checkbox(&mut enabled, label)
+            if ff::check(ui, &mut enabled, label)
                 .on_hover_text("Turning it off removes the startup entry completely")
                 .changed()
             {

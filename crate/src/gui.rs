@@ -84,6 +84,9 @@ impl SubtitleDownloader {
         }
 
         let center = ui.max_rect().center();
+        if ff::is_glass() && fade_out {
+            ff::paint_glass_backdrop(ui.painter(), ui.max_rect().expand(16.0), out_alpha);
+        }
         let alpha = |a: f32| (a * out_alpha * 255.0) as u8;
         let with_alpha = |c: egui::Color32, a: f32| {
             egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha(a))
@@ -433,7 +436,7 @@ impl SubtitleDownloader {
         ui.horizontal_wrapped(|ui| {
             for (code, name) in PROVIDERS {
                 let mut selected = self.providers.iter().any(|value| value == code);
-                if ui.checkbox(&mut selected, *name).changed() {
+                if crate::ff_theme::check(ui, &mut selected, *name).changed() {
                     changed = true;
                     if selected {
                         self.providers.push((*code).to_string());
@@ -506,7 +509,7 @@ impl SubtitleDownloader {
         ui.horizontal_wrapped(|ui| {
             for (code, name, hint) in REFINERS {
                 let mut selected = self.refiners.iter().any(|value| value == code);
-                if ui.checkbox(&mut selected, *name).on_hover_text(*hint).changed() {
+                if crate::ff_theme::check(ui, &mut selected, *name).on_hover_text(*hint).changed() {
                     changed = true;
                     if selected {
                         self.refiners.push((*code).to_string());
@@ -838,7 +841,7 @@ impl eframe::App for SubtitleDownloader {
                 match self.theme {
                     crate::ff_theme::Theme::GreenDash => self.render_green_layout(ui),
                     crate::ff_theme::Theme::Blades => self.render_blades_layout(ui),
-                    crate::ff_theme::Theme::FfMenu => self.render_ff_layout(ui),
+                    crate::ff_theme::Theme::FfMenu | crate::ff_theme::Theme::Glass => self.render_ff_layout(ui),
                 }
             });
 
