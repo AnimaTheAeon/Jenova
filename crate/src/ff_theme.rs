@@ -18,7 +18,7 @@ pub enum Theme {
     GreenDash,
     /// Glossy silver blades; the open one wears its page's color.
     Blades,
-    /// Dark frosted glass over soft color, capsule controls (iOS style).
+    /// Dark frosted glass over soft color, capsule controls (rounded, soft style).
     Glass,
 }
 
@@ -44,7 +44,7 @@ impl Theme {
             Theme::FfMenu => "FFVII Menu",
             Theme::GreenDash => "Xbox",
             Theme::Blades => "Blades",
-            Theme::Glass => "Liquid Glass",
+            Theme::Glass => "Dark Glass",
         }
     }
 }
@@ -87,7 +87,7 @@ pub fn calm() -> bool {
     CALM.load(Ordering::Relaxed)
 }
 
-/// Moves a value toward `target` with an iOS-like ease-out (fast start,
+/// Moves a value toward `target` with a springy ease-out (fast start,
 /// soft landing). Jumps straight there with Reduce motion on.
 pub fn glide(ctx: &egui::Context, id: egui::Id, target: f32) -> f32 {
     let cur: Option<f32> = ctx.data(|d| d.get_temp(id));
@@ -226,7 +226,7 @@ pub const BLADES_PALETTE: Palette = Palette {
     on_accent: Color32::WHITE,
 };
 
-/// Glass: translucent white panes, iOS system colors.
+/// Glass: translucent white panes, bright system-style colors.
 pub const GLASS_PALETTE: Palette = Palette {
     win_tl: Color32::from_rgba_premultiplied(20, 20, 20, 20),
     win_tr: Color32::from_rgba_premultiplied(16, 16, 16, 16),
@@ -365,7 +365,7 @@ pub fn apply_style(ctx: &egui::Context) {
         visuals.widgets.open = w(60, 200);
     }
     if is_glass() {
-        // iOS: soft gray fills, no hard outlines, capsule corners.
+        // Soft gray fills, no hard outlines, capsule corners.
         let gray = |a: u8| Color32::from_rgba_unmultiplied(118, 118, 128, a);
         let white = |a: u8| Color32::from_rgba_unmultiplied(255, 255, 255, a);
         visuals.window_fill = Color32::from_rgb(28, 28, 34);
@@ -509,7 +509,7 @@ fn green_window_shapes(rect: Rect) -> Vec<Shape> {
 /// Shapes for a gradient window with a beveled border.
 pub fn window_shapes(rect: Rect) -> Vec<Shape> {
     if is_glass() {
-        // Liquid glass: a soft shadow, a faint white pane, a dark rim and a
+        // Dark glass: a soft shadow, a faint white pane, a dark rim and a
         // bright top edge, rounded generously.
         let radius = CornerRadius::same(22);
         let shadow = egui::epaint::Shadow { offset: [0, 10], blur: 34, spread: 0, color: Color32::from_black_alpha(110) };
@@ -1020,7 +1020,7 @@ pub fn solid_backing<R>(ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) ->
         .inner
 }
 
-/// A check box; in the glass look an iOS switch with its label after it.
+/// A check box; in the glass look a toggle switch with its label after it.
 pub fn check(ui: &mut Ui, value: &mut bool, text: impl Into<egui::WidgetText>) -> Response {
     if !is_glass() {
         return ui.checkbox(value, text);

@@ -146,13 +146,13 @@ pub struct SubtitleDownloader {
     pub background_checked: bool,
     pub updater: Arc<crate::updater::Updater>,
     pub check_updates: bool,
-    /// Current look (FFVII menu or Box of X).
+    /// Current look (FFVII menu or Xbox).
     pub theme: crate::ff_theme::Theme,
-    /// Box of X: a page is open (false = the home screen with the orb).
+    /// Xbox: a page is open (false = the home screen with the orb).
     pub green_in_page: bool,
-    /// Box of X: highlighted menu entry on the home screen.
+    /// Xbox: highlighted menu entry on the home screen.
     pub green_cursor: usize,
-    /// Box of X transitions: zooming into the orb to open a page, the page
+    /// Xbox transitions: zooming into the orb to open a page, the page
     /// coming out of the glow, and both reversed on BACK.
     pub green_zoom: Option<(MenuPage, std::time::Instant)>,
     pub green_reveal: Option<std::time::Instant>,

@@ -44,7 +44,7 @@ impl SubtitleDownloader {
             self.menu_page = MenuPage::Config;
         }
 
-        // Liquid Glass puts the menu on the left, like an iPad app.
+        // Dark Glass puts the menu on the left, like a tablet app.
         let main = if glass {
             Rect::from_min_max(pos2(full.left() + side_w + gap, full.top()), pos2(full.right(), full.bottom() - bar_h - gap))
         } else {
