@@ -749,8 +749,11 @@ impl Mc360 {
         let ctx = ui.ctx().clone();
         let full = ui.max_rect();
         let n = blades.len().max(1);
-        let s = (full.height() / 576.0).clamp(0.6, 3.0);
+        // Scale to the window's height, but never so far that the narrowest
+        // layout (560 wide) runs off the side; leftover height is split above and below.
+        let s = (full.height() / 576.0).min(full.width() / 560.0).clamp(0.3, 3.0);
         let w = (full.width() / s).max(560.0);
+        let oy = ((full.height() - 576.0 * s) / 2.0).max(0.0);
         let calm = self.calm(info);
         if self.b >= blades.len() {
             self.b = 0;
@@ -793,7 +796,7 @@ impl Mc360 {
             }
         }
 
-        let to_screen = |x: f32, y: f32| full.min + vec2(x * s, y * s);
+        let to_screen = |x: f32, y: f32| full.min + vec2(x * s, oy + y * s);
         let painter = ui.painter().with_clip_rect(full);
         painter.rect_filled(full, 0.0, Color32::BLACK);
         let t = ctx.input(|i| i.time) as f32;

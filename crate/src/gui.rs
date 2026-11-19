@@ -838,6 +838,10 @@ impl eframe::App for SubtitleDownloader {
                     });
                     return;
                 }
+                // MC360 starts fresh (on the open page's menu) each time it's picked.
+                if self.theme != crate::ff_theme::Theme::Mc360 {
+                    self.mc = None;
+                }
                 match self.theme {
                     crate::ff_theme::Theme::GreenDash => self.render_green_layout(ui),
                     crate::ff_theme::Theme::Blades => self.render_blades_layout(ui),

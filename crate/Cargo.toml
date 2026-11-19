@@ -1,6 +1,6 @@
 [package]
 name = "jenova"
-version = "1.4.10"
+version = "1.4.11"
 edition = "2021"
 build = "build.rs"
 
