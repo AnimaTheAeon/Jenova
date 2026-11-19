@@ -20,6 +20,8 @@ pub enum Theme {
     Blades,
     /// Dark frosted glass over soft color, capsule controls (rounded, soft style).
     Glass,
+    /// The MC360 dashboard skin's blades; pages look as in Blades.
+    Mc360,
 }
 
 impl Theme {
@@ -28,6 +30,7 @@ impl Theme {
             "green" => Theme::GreenDash,
             "blades" => Theme::Blades,
             "glass" => Theme::Glass,
+            "mc360" => Theme::Mc360,
             _ => Theme::FfMenu,
         }
     }
@@ -37,6 +40,7 @@ impl Theme {
             Theme::GreenDash => "green",
             Theme::Blades => "blades",
             Theme::Glass => "glass",
+            Theme::Mc360 => "mc360",
         }
     }
     pub fn label(self) -> &'static str {
@@ -45,6 +49,7 @@ impl Theme {
             Theme::GreenDash => "Xbox",
             Theme::Blades => "Blades",
             Theme::Glass => "Dark Glass",
+            Theme::Mc360 => "MC360",
         }
     }
 }
@@ -67,6 +72,7 @@ pub fn theme() -> Theme {
         1 => Theme::GreenDash,
         2 => Theme::Blades,
         3 => Theme::Glass,
+        4 => Theme::Mc360,
         _ => Theme::FfMenu,
     }
 }
@@ -120,8 +126,13 @@ pub fn paint_glass_backdrop(p: &egui::Painter, rect: Rect, k: f32) {
     blob(0.55, 1.12, 0.45, (0, 190, 170), 51);
 }
 
+/// Blades, or MC360 (whose pages look as in Blades).
 pub fn is_blades() -> bool {
-    theme() == Theme::Blades
+    matches!(theme(), Theme::Blades | Theme::Mc360)
+}
+
+pub fn is_mc360() -> bool {
+    theme() == Theme::Mc360
 }
 
 /// Inner margin for text boxes. Blades rounds them like pills, so the text
@@ -253,7 +264,7 @@ pub fn pal() -> &'static Palette {
     match theme() {
         Theme::Glass => &GLASS_PALETTE,
         Theme::GreenDash => &GREEN_PALETTE,
-        Theme::Blades => &BLADES_PALETTE,
+        Theme::Blades | Theme::Mc360 => &BLADES_PALETTE,
         Theme::FfMenu => &FF_PALETTE,
     }
 }
@@ -589,6 +600,10 @@ fn pane_shapes(ui: &Ui, rect: Rect) -> Vec<Shape> {
     let mut shapes = window_shapes(rect);
     if is_glass() && matches!(ui.layer_id().order, egui::Order::Foreground | egui::Order::Tooltip | egui::Order::Debug) {
         shapes.insert(1, Shape::rect_filled(rect, CornerRadius::same(22), Color32::from_rgb(30, 30, 36)));
+    }
+    // MC360: dialogs float over the page, so they get a solid pane.
+    if is_mc360() && matches!(ui.layer_id().order, egui::Order::Foreground | egui::Order::Tooltip | egui::Order::Debug) {
+        shapes.insert(0, Shape::rect_filled(rect, CornerRadius::same(18), Color32::from_rgb(52, 47, 78)));
     }
     shapes
 }

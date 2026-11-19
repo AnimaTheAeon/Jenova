@@ -281,6 +281,7 @@ impl SubtitleDownloader {
             green_leave: None,
             green_unzoom: None,
             blades: Default::default(),
+            mc: None,
             menu_page: MenuPage::Watch,
             menu_touched: false,
             advanced_open: false,

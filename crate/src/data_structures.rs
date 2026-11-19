@@ -160,6 +160,8 @@ pub struct SubtitleDownloader {
     pub green_unzoom: Option<std::time::Instant>,
     /// Blades theme: slide state between frames.
     pub blades: crate::blades::State,
+    /// The MC360 look, while it is on.
+    pub mc: Option<crate::mc360::Mc360>,
     pub menu_page: MenuPage,
     /// The side menu has been clicked this session (shows the hand cursor).
     pub menu_touched: bool,

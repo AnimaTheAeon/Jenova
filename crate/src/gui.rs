@@ -828,7 +828,7 @@ impl eframe::App for SubtitleDownloader {
             .frame(
                 egui::Frame::new()
                     .fill(crate::ff_theme::BACKDROP())
-                    .inner_margin(egui::Margin::same(if self.theme == crate::ff_theme::Theme::Blades { 0 } else { 14 })),
+                    .inner_margin(egui::Margin::same(if matches!(self.theme, crate::ff_theme::Theme::Blades | crate::ff_theme::Theme::Mc360) { 0 } else { 14 })),
             )
             .show(ui, |ui| {
                 if self.installing_python || self.installing_subliminal {
@@ -841,6 +841,7 @@ impl eframe::App for SubtitleDownloader {
                 match self.theme {
                     crate::ff_theme::Theme::GreenDash => self.render_green_layout(ui),
                     crate::ff_theme::Theme::Blades => self.render_blades_layout(ui),
+                    crate::ff_theme::Theme::Mc360 => self.render_mc360_layout(ui),
                     crate::ff_theme::Theme::FfMenu | crate::ff_theme::Theme::Glass => self.render_ff_layout(ui),
                 }
             });

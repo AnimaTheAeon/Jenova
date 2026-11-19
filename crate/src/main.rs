@@ -5,6 +5,9 @@ mod app;
 mod background;
 mod blades;
 mod blades_layout;
+mod mc360;
+mod mc360_app;
+mod mc360_data;
 mod config;
 mod credentials;
 mod data_structures;
@@ -245,6 +248,7 @@ fn configure_fonts(ctx: &egui::Context) {
         egui::FontFamily::Name("display".into()),
         vec!["Orbitron".to_owned(), "Nunito".to_owned(), "Inter".to_owned()],
     );
+    mc360::add_font(&mut fonts);
     ctx.set_fonts(fonts);
 }
 
