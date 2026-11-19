@@ -725,7 +725,7 @@ impl Mc360 {
         (0..n)
             .map(|i| {
                 if i == self.b {
-                    (if self.tier == 1 { 18.0 + 35.0 * i as f32 } else { -40.0 }, "blades-size4-header", 'h')
+                    (if self.tier == 1 { 18.0 + 35.0 * i as f32 } else { 18.0 }, "blades-size4-header", 'h')
                 } else if i < self.b {
                     (if self.tier == 1 { 18.0 + 35.0 * i as f32 } else { -120.0 - 35.0 * (self.b - i) as f32 }, depth(self.b - i, "left"), 'l')
                 } else {
@@ -782,7 +782,7 @@ impl Mc360 {
             let end = if self.b + 1 < n { w - 87.0 - 35.0 * (n - 1 - (self.b + 1)) as f32 + 65.0 } else { w };
             (18.0 + 35.0 * self.b as f32, end)
         } else {
-            (-40.0, w + 200.0)
+            (18.0, w)
         };
         // During a slide the panel jumps to its new place and slides as a whole.
         let frame_anim = animate && self.slide.is_none();
@@ -826,7 +826,7 @@ impl Mc360 {
         }
         let x0 = self.frame_x0.get();
         let end = self.frame_end.get();
-        let wash_end = if self.tier == 1 { end } else { w + 90.0 };
+        let wash_end = end;
         self.panel(&ctx, &painter, &to_screen, s, x0, end, wash_end, blade_tint(self.b), skin, swirl_f, main_shift, &EDGE);
 
         // ---- content (menu or page title) with its slide-in
@@ -866,8 +866,8 @@ impl Mc360 {
 
         // ---- runners and blades
         let skin_name = SKINS[skin];
-        self.spr(&ctx, &painter, &to_screen, s, &format!("{skin_name}:blades-runner-left"), if self.tier == 1 { -61.0 } else { -119.0 }, 0.0, 128.0, 576.0, 1.0);
-        self.spr(&ctx, &painter, &to_screen, s, &format!("{skin_name}:blades-runner-right"), if self.tier == 1 { w - 55.0 } else { w + 40.0 }, 0.0, 128.0, 576.0, 1.0);
+        self.spr(&ctx, &painter, &to_screen, s, &format!("{skin_name}:blades-runner-left"), -61.0, 0.0, 128.0, 576.0, 1.0);
+        self.spr(&ctx, &painter, &to_screen, s, &format!("{skin_name}:blades-runner-right"), w - 55.0, 0.0, 128.0, 576.0, 1.0);
         // Left blades first (lowest first), then the right ones from the far end, then the open one.
         let mut order: Vec<usize> = (0..n).filter(|i| pos[*i].2 == 'l').collect();
         order.extend((0..n).filter(|i| pos[*i].2 == 'r').rev());
@@ -897,7 +897,7 @@ impl Mc360 {
             }
         }
         if self.tier == 2 && !self.guide {
-            let r = Rect::from_min_max(to_screen(0.0, 0.0), to_screen(30.0, 576.0));
+            let r = Rect::from_min_max(to_screen(18.0, 0.0), to_screen(78.0, 576.0));
             if ui.interact(r, Id::new("mc360-back-strip"), Sense::click()).clicked() {
                 self.back(before_back, n, w, calm, &mut events);
             }
@@ -919,7 +919,8 @@ impl Mc360 {
 
         // ---- the page in its pane
         if self.tier == 2 {
-            let pane = Rect::from_min_max(to_screen(70.0, 70.0), to_screen(w - 40.0, 505.0));
+            // Between the open blade's art (to x + 74) and the right runner (from W - 52).
+            let pane = Rect::from_min_max(to_screen(98.0, 70.0), to_screen(w - 60.0, 505.0));
             let (mut shift, mut alpha) = (0.0, 1.0);
             if let Some(t0) = self.page_t0 {
                 let k = ease(t0.elapsed().as_secs_f32() / SLIDE);
